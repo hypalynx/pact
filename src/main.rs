@@ -1,4 +1,3 @@
-use chrono::{DateTime, Local};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::Frame;
 use ratatui::{
@@ -14,34 +13,25 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Message {
-    id: u64,
     text: String,
-    timestamp: DateTime<Local>,
 }
 
 struct App {
     messages: Vec<Message>,
+    history: Vec<String>,
+    history_index: Option<usize>,
     input: String,
-    next_id: u64,
-    scroll_offset: usize,
     input_rect: Rect,
     messages_rect: Rect,
 }
 
 impl App {
     fn new() -> Self {
-        let messages = Self::load_messages().unwrap_or_default();
-        let next_id = messages
-            .iter()
-            .map(|m| m.id)
-            .max()
-            .map(|id| id + 1)
-            .unwrap_or(1);
         Self {
-            messages,
+            messages: Vec::new(),
+            history: Vec::new(),
+            history_index: None,
             input: String::new(),
-            next_id,
-            scroll_offset: 0,
             input_rect: Rect::default(),
             messages_rect: Rect::default(),
         }
@@ -55,19 +45,24 @@ impl App {
         path
     }
 
-    fn load_messages() -> io::Result<Vec<Message>> {
+    fn load_history() -> io::Result<Vec<String>> {
         let path = Self::messages_path();
         if !path.exists() {
             return Ok(Vec::new());
         }
         let content = fs::read_to_string(path)?;
         let messages: Vec<Message> = serde_json::from_str(&content).unwrap_or_default();
-        Ok(messages)
+        Ok(messages.into_iter().map(|m| m.text).collect())
     }
 
-    fn save_messages(&self) -> io::Result<()> {
+    fn save_history(&self) -> io::Result<()> {
         let path = Self::messages_path();
-        let content = serde_json::to_string_pretty(&self.messages)?;
+        let messages: Vec<Message> = self
+            .history
+            .iter()
+            .map(|t| Message { text: t.clone() })
+            .collect();
+        let content = serde_json::to_string_pretty(&messages)?;
         fs::write(path, content)
     }
 
@@ -75,34 +70,46 @@ impl App {
         if self.input.trim().is_empty() {
             return;
         }
-        let message = Message {
-            id: self.next_id,
-            text: std::mem::take(&mut self.input),
-            timestamp: Local::now(),
-        };
-        self.next_id += 1;
-        self.messages.push(message);
-        self.save_messages().ok();
+        let text = std::mem::take(&mut self.input);
+        self.history.push(text.clone());
+        self.messages.push(Message { text });
+        self.history_index = None;
+        self.save_history().ok();
         self.input = String::new();
     }
 
-    fn scroll_up(&mut self) {
-        if self.scroll_offset > 0 {
-            self.scroll_offset -= 1;
+    fn history_up(&mut self) {
+        if self.history.is_empty() {
+            return;
         }
+        let new_index = match self.history_index {
+            None => self.history.len() - 1,
+            Some(i) if i == 0 => return,
+            Some(i) => i - 1,
+        };
+        self.history_index = Some(new_index);
+        self.input = self.history[new_index].clone();
     }
 
-    fn scroll_down(&mut self) {
-        let max_scroll = self.messages.len().saturating_sub(1);
-        if self.scroll_offset < max_scroll {
-            self.scroll_offset += 1;
-        }
+    fn history_down(&mut self) {
+        let new_index = match self.history_index {
+            None => return,
+            Some(i) if i >= self.history.len() - 1 => {
+                self.history_index = None;
+                self.input.clear();
+                return;
+            }
+            Some(i) => i + 1,
+        };
+        self.history_index = Some(new_index);
+        self.input = self.history[new_index].clone();
     }
 }
 
 fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
     let mut app = App::new();
+    app.history = App::load_history().unwrap_or_default();
 
     loop {
         terminal.draw(|f| app.draw(f))?;
@@ -112,14 +119,21 @@ fn main() -> io::Result<()> {
                 continue;
             }
             match key.code {
-                KeyCode::Char('q') => break,
+                KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                    if app.input.is_empty() {
+                        break;
+                    } else {
+                        app.input.clear();
+                        app.history_index = None;
+                    }
+                }
                 KeyCode::Char(c) => app.input.push(c),
                 KeyCode::Backspace => {
                     app.input.pop();
                 }
                 KeyCode::Enter => app.submit_message(),
-                KeyCode::Up => app.scroll_up(),
-                KeyCode::Down => app.scroll_down(),
+                KeyCode::Up => app.history_up(),
+                KeyCode::Down => app.history_down(),
                 _ => {}
             }
         }
@@ -143,45 +157,33 @@ impl App {
     }
 
     fn draw_messages(&self, frame: &mut Frame) {
-        let visible_count = self.messages_rect.height as usize / 4;
-        let start = self.scroll_offset;
-        let end = (start + visible_count).min(self.messages.len());
+        let border = Block::bordered().title("Messages");
+        frame.render_widget(border, self.messages_rect);
+
+        let inner = self.messages_rect.inner(ratatui::layout::Margin::new(1, 1));
 
         let mut lines = Vec::new();
-
-        for i in start..end {
-            let msg = &self.messages[i];
-            let time = msg.timestamp.format("%H:%M").to_string();
-            lines.push(Line::from(vec![
-                format!("[{}] ", time).into(),
-                msg.text.clone().into(),
-            ]));
+        for msg in &self.messages {
+            lines.push(Line::from(msg.text.clone()));
             lines.push(Line::from(""));
         }
 
-        let paragraph = Paragraph::new(lines)
-            .block(Block::bordered().title("Messages"))
-            .style(Style::default().fg(Color::White));
+        let line_count = lines.len() as u16;
+        let y_offset = inner.height.saturating_sub(line_count);
 
-        frame.render_widget(paragraph, self.messages_rect);
+        let content_area = Rect {
+            x: inner.x,
+            y: inner.y + y_offset,
+            width: inner.width,
+            height: line_count.min(inner.height),
+        };
 
-        if self.messages.len() > visible_count {
-            let scrollbar = Paragraph::new("")
-                .block(Block::bordered())
-                .scroll((self.scroll_offset as u16, 0));
-            let sb_area = Rect {
-                x: self.messages_rect.right() - 3,
-                y: self.messages_rect.y,
-                width: 3,
-                height: self.messages_rect.height,
-            };
-            frame.render_widget(scrollbar, sb_area);
-        }
+        frame.render_widget(Paragraph::new(lines), content_area);
     }
 
     fn draw_input(&self, frame: &mut Frame) {
         let input = Paragraph::new(self.input.as_str())
-            .block(Block::bordered().title("Type here (Enter to submit, q to quit)"))
+            .block(Block::bordered().title("Type here (Enter to submit, Ctrl+C to clear/quit)"))
             .style(Style::default().fg(Color::Yellow));
 
         frame.render_widget(input, self.input_rect);
