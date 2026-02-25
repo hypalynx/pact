@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::Line,
-    widgets::{Block, Paragraph},
+    widgets::Paragraph,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -127,6 +127,9 @@ fn main() -> io::Result<()> {
                         app.history_index = None;
                     }
                 }
+                KeyCode::Char('j') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                    app.input.push('\n');
+                }
                 KeyCode::Char(c) => app.input.push(c),
                 KeyCode::Backspace => {
                     app.input.pop();
@@ -145,9 +148,17 @@ fn main() -> io::Result<()> {
 
 impl App {
     fn draw(&mut self, frame: &mut Frame) {
-        let vertical = Layout::vertical([Constraint::Min(3), Constraint::Length(3)]);
+        let margin = ratatui::layout::Margin::new(1, 1);
+        let area = frame.area().inner(margin);
 
-        let [messages_area, input_area] = vertical.areas(frame.area());
+        let input_lines = (self.input.lines().count()
+            + if self.input.ends_with('\n') { 1 } else { 0 })
+        .max(1) as u16;
+        let input_height = (input_lines + 2).min(10).max(3);
+
+        let vertical = Layout::vertical([Constraint::Min(3), Constraint::Length(input_height)]);
+
+        let [messages_area, input_area] = vertical.areas(area);
 
         self.messages_rect = messages_area;
         self.input_rect = input_area;
@@ -157,35 +168,62 @@ impl App {
     }
 
     fn draw_messages(&self, frame: &mut Frame) {
-        let border = Block::bordered().title("Messages");
-        frame.render_widget(border, self.messages_rect);
-
-        let inner = self.messages_rect.inner(ratatui::layout::Margin::new(1, 1));
-
         let mut lines = Vec::new();
         for msg in &self.messages {
-            lines.push(Line::from(msg.text.clone()));
+            for line in msg.text.lines() {
+                lines.push(Line::from(line.to_string()));
+            }
             lines.push(Line::from(""));
         }
 
         let line_count = lines.len() as u16;
-        let y_offset = inner.height.saturating_sub(line_count);
+        let y_offset = self
+            .messages_rect
+            .height
+            .saturating_sub(line_count)
+            .saturating_sub(1);
 
         let content_area = Rect {
-            x: inner.x,
-            y: inner.y + y_offset,
-            width: inner.width,
-            height: line_count.min(inner.height),
+            x: self.messages_rect.x,
+            y: self.messages_rect.y + y_offset,
+            width: self.messages_rect.width,
+            height: line_count.min(self.messages_rect.height),
         };
 
         frame.render_widget(Paragraph::new(lines), content_area);
     }
 
     fn draw_input(&self, frame: &mut Frame) {
-        let input = Paragraph::new(self.input.as_str())
-            .block(Block::bordered().title("Type here (Enter to submit, Ctrl+C to clear/quit)"))
-            .style(Style::default().fg(Color::Yellow));
+        let margin = Paragraph::new("").style(Style::default().bg(Color::Black));
+        frame.render_widget(margin, self.input_rect);
 
-        frame.render_widget(input, self.input_rect);
+        let inner = self.input_rect.inner(ratatui::layout::Margin {
+            horizontal: 3,
+            vertical: 1,
+        });
+        let input = Paragraph::new(self.input.as_str())
+            .style(Style::default().fg(Color::White).bg(Color::Black));
+        frame.render_widget(input, inner);
+
+        let (cursor_x, cursor_y) = self.cursor_position();
+        let cursor_pos = ratatui::layout::Position {
+            x: inner.x + cursor_x as u16,
+            y: inner.y + cursor_y as u16,
+        };
+        frame.set_cursor_position(cursor_pos);
+    }
+
+    fn cursor_position(&self) -> (usize, usize) {
+        let mut x = 0;
+        let mut y = 0;
+        for c in self.input.chars() {
+            if c == '\n' {
+                y += 1;
+                x = 0;
+            } else {
+                x += 1;
+            }
+        }
+        (x, y)
     }
 }
