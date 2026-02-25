@@ -47,6 +47,7 @@ struct App {
     loading: bool,
     pending_response: String,
     debug: bool,
+    scroll_offset: usize,
 }
 
 impl App {
@@ -64,6 +65,7 @@ impl App {
             loading: false,
             pending_response: String::new(),
             debug,
+            scroll_offset: 0,
         }
     }
 
@@ -151,6 +153,40 @@ impl App {
         self.history_index = Some(new_index);
         self.input = self.history[new_index].clone();
     }
+
+    fn scroll_up(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_add(3);
+    }
+
+    fn scroll_down(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(3);
+    }
+}
+
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let mut current_line = String::new();
+        for word in paragraph.split_whitespace() {
+            if current_line.is_empty() {
+                current_line = word.to_string();
+            } else if current_line.len() + 1 + word.len() <= width {
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                lines.push(current_line);
+                current_line = word.to_string();
+            }
+        }
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+    }
+    lines
 }
 
 fn call_llm(messages: Vec<Message>, tx: mpsc::Sender<LlmEvent>, debug: bool) {
@@ -308,6 +344,8 @@ fn main() -> io::Result<()> {
                     KeyCode::Enter => app.submit_message(),
                     KeyCode::Up => app.history_up(),
                     KeyCode::Down => app.history_down(),
+                    KeyCode::PageUp => app.scroll_up(),
+                    KeyCode::PageDown => app.scroll_down(),
                     _ => {}
                 }
             }
@@ -341,24 +379,27 @@ impl App {
 
     fn draw_messages(&self, frame: &mut Frame) {
         let mut lines = Vec::new();
+        let available_width = (self.messages_rect.width.saturating_sub(4)) as usize;
 
         for msg in &self.messages {
+            let wrapped = wrap_text(&msg.text, available_width);
             if msg.role == "user" {
-                // User message with dark gray background
-                for line in msg.text.lines() {
+                // User message with dark gray background (matches input box)
+                for line in wrapped {
+                    let padded = format!("  {}  ", line);
                     lines.push(Line::from(
                         vec![
                             ratatui::text::Span::styled(
-                                format!("  {}  ", line),
-                                Style::default().bg(Color::DarkGray),
+                                padded,
+                                Style::default().bg(Color::Black),
                             )
                         ]
                     ));
                 }
             } else {
                 // Assistant message (plain)
-                for line in msg.text.lines() {
-                    lines.push(Line::from(line.to_string()));
+                for line in wrapped {
+                    lines.push(Line::from(line));
                 }
             }
             lines.push(Line::from(""));
@@ -366,26 +407,28 @@ impl App {
 
         // Add pending response if streaming
         if !self.pending_response.is_empty() {
-            for line in self.pending_response.lines() {
-                lines.push(Line::from(line.to_string()));
+            let wrapped = wrap_text(&self.pending_response, available_width);
+            for line in wrapped {
+                lines.push(Line::from(line));
             }
         }
 
         let line_count = lines.len() as u16;
-        let y_offset = self
-            .messages_rect
-            .height
-            .saturating_sub(line_count)
-            .saturating_sub(1);
+        let scroll = self.scroll_offset as u16;
 
-        let content_area = Rect {
-            x: self.messages_rect.x,
-            y: self.messages_rect.y + y_offset,
-            width: self.messages_rect.width,
-            height: line_count.min(self.messages_rect.height),
+        let start_line = if scroll < line_count {
+            (line_count - scroll).saturating_sub(self.messages_rect.height).min(line_count)
+        } else {
+            0
         };
 
-        frame.render_widget(Paragraph::new(lines), content_area);
+        let visible_lines: Vec<Line> = lines
+            .into_iter()
+            .skip(start_line as usize)
+            .take(self.messages_rect.height as usize)
+            .collect();
+
+        frame.render_widget(Paragraph::new(visible_lines), self.messages_rect);
     }
 
     fn draw_input(&self, frame: &mut Frame) {
