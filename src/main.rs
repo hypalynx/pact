@@ -1,10 +1,13 @@
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseEventKind, EnableMouseCapture, DisableMouseCapture};
+use crossterm::execute;
+use pulldown_cmark::{Parser as MdParser, Event as MdEvent, Tag};
 use ratatui::Frame;
+use std::io::stdout;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::Paragraph,
 };
 use serde::{Deserialize, Serialize};
@@ -40,6 +43,7 @@ struct App {
     history: Vec<String>,
     history_index: Option<usize>,
     input: String,
+    cursor_pos: usize,
     input_rect: Rect,
     messages_rect: Rect,
     rx: mpsc::Receiver<LlmEvent>,
@@ -58,6 +62,7 @@ impl App {
             history: Vec::new(),
             history_index: None,
             input: String::new(),
+            cursor_pos: 0,
             input_rect: Rect::default(),
             messages_rect: Rect::default(),
             rx,
@@ -115,6 +120,7 @@ impl App {
         self.history_index = None;
         self.save_history().ok();
         self.input = String::new();
+        self.cursor_pos = 0;
         self.loading = true;
         self.pending_response.clear();
 
@@ -138,6 +144,7 @@ impl App {
         };
         self.history_index = Some(new_index);
         self.input = self.history[new_index].clone();
+        self.cursor_pos = self.input.len();
     }
 
     fn history_down(&mut self) {
@@ -146,12 +153,14 @@ impl App {
             Some(i) if i >= self.history.len() - 1 => {
                 self.history_index = None;
                 self.input.clear();
+                self.cursor_pos = 0;
                 return;
             }
             Some(i) => i + 1,
         };
         self.history_index = Some(new_index);
         self.input = self.history[new_index].clone();
+        self.cursor_pos = self.input.len();
     }
 
     fn scroll_up(&mut self) {
@@ -161,6 +170,109 @@ impl App {
     fn scroll_down(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(3);
     }
+
+    fn insert_char(&mut self, c: char) {
+        self.input.insert(self.cursor_pos, c);
+        self.cursor_pos += c.len_utf8();
+    }
+
+    fn delete_char(&mut self) {
+        if self.cursor_pos > 0 {
+            let byte_pos = self.input
+                .char_indices()
+                .filter(|(i, _)| *i < self.cursor_pos)
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.input.remove(byte_pos);
+            self.cursor_pos = self.cursor_pos.saturating_sub(1);
+        }
+    }
+
+    fn move_cursor_to_start(&mut self) {
+        self.cursor_pos = 0;
+    }
+
+    fn move_cursor_to_end(&mut self) {
+        self.cursor_pos = self.input.len();
+    }
+
+    fn kill_word_backward(&mut self) {
+        if self.cursor_pos == 0 {
+            return;
+        }
+
+        let input_chars: Vec<char> = self.input.chars().collect();
+        let mut pos = self.cursor_pos.saturating_sub(1);
+
+        // Skip any whitespace
+        while pos > 0 && input_chars[pos].is_whitespace() {
+            pos = pos.saturating_sub(1);
+        }
+
+        // Find word boundary
+        while pos > 0 && !input_chars[pos - 1].is_whitespace() {
+            pos = pos.saturating_sub(1);
+        }
+
+        // Delete from pos to cursor_pos
+        let byte_pos = self.input
+            .chars()
+            .take(pos)
+            .map(|c| c.len_utf8())
+            .sum::<usize>();
+        let byte_end = self.input
+            .chars()
+            .take(self.cursor_pos)
+            .map(|c| c.len_utf8())
+            .sum::<usize>();
+
+        self.input.drain(byte_pos..byte_end);
+        self.cursor_pos = pos;
+    }
+}
+
+fn parse_markdown_line(text: &str) -> Vec<Span<'static>> {
+    let parser = MdParser::new(text);
+    let mut spans = Vec::new();
+    let mut bold = false;
+    let mut italic = false;
+
+    for event in parser {
+        match event {
+            MdEvent::Start(tag) => match tag {
+                Tag::Strong => bold = true,
+                Tag::Emphasis => italic = true,
+                _ => {}
+            },
+            MdEvent::End(tag) => match tag {
+                Tag::Strong => bold = false,
+                Tag::Emphasis => italic = false,
+                _ => {}
+            },
+            MdEvent::Text(text) => {
+                let s = text.to_string();
+                let mut style = Style::default();
+                if bold {
+                    style = style.bold();
+                    // Add amber/yellow color for bold text
+                    style = style.fg(Color::Yellow);
+                } else if italic {
+                    style = style.italic();
+                }
+                spans.push(Span::styled(s, style));
+            }
+            MdEvent::Code(text) => {
+                spans.push(Span::styled(text.to_string(), Style::default().fg(Color::Cyan)));
+            }
+            MdEvent::SoftBreak | MdEvent::HardBreak => {
+                // Line breaks shouldn't happen in a single line
+            }
+            _ => {}
+        }
+    }
+
+    spans
 }
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
@@ -291,6 +403,10 @@ fn call_llm(messages: Vec<Message>, tx: mpsc::Sender<LlmEvent>, debug: bool) {
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let mut terminal = ratatui::init();
+
+    // Enable mouse support
+    execute!(stdout(), EnableMouseCapture)?;
+
     let mut app = App::new(args.debug);
     app.history = App::load_history().unwrap_or_default();
 
@@ -321,37 +437,59 @@ fn main() -> io::Result<()> {
         }
 
         if event::poll(Duration::from_millis(16))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                        if app.input.is_empty() {
-                            break;
-                        } else {
-                            app.input.clear();
-                            app.history_index = None;
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    match key.code {
+                        KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            if app.input.is_empty() {
+                                break;
+                            } else {
+                                app.input.clear();
+                                app.cursor_pos = 0;
+                                app.history_index = None;
+                            }
                         }
+                        KeyCode::Char('a') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.move_cursor_to_start();
+                        }
+                        KeyCode::Char('e') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.move_cursor_to_end();
+                        }
+                        KeyCode::Char('w') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.kill_word_backward();
+                        }
+                        KeyCode::Char('j') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.insert_char('\n');
+                        }
+                        KeyCode::Char(c) => app.insert_char(c),
+                        KeyCode::Backspace => {
+                            app.delete_char();
+                        }
+                        KeyCode::Enter => app.submit_message(),
+                        KeyCode::Up => app.history_up(),
+                        KeyCode::Down => app.history_down(),
+                        KeyCode::PageUp => app.scroll_up(),
+                        KeyCode::PageDown => app.scroll_down(),
+                        _ => {}
                     }
-                    KeyCode::Char('j') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                        app.input.push('\n');
-                    }
-                    KeyCode::Char(c) => app.input.push(c),
-                    KeyCode::Backspace => {
-                        app.input.pop();
-                    }
-                    KeyCode::Enter => app.submit_message(),
-                    KeyCode::Up => app.history_up(),
-                    KeyCode::Down => app.history_down(),
-                    KeyCode::PageUp => app.scroll_up(),
-                    KeyCode::PageDown => app.scroll_down(),
-                    _ => {}
                 }
+                Event::Mouse(mouse) => {
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => app.scroll_up(),
+                        MouseEventKind::ScrollDown => app.scroll_down(),
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }
     }
 
+    // Disable mouse support on exit
+    execute!(stdout(), DisableMouseCapture)?;
     ratatui::restore();
     Ok(())
 }
@@ -366,9 +504,13 @@ impl App {
         .max(1) as u16;
         let input_height = (input_lines + 2).min(10).max(3);
 
-        let vertical = Layout::vertical([Constraint::Min(3), Constraint::Length(input_height)]);
+        let vertical = Layout::vertical([
+            Constraint::Min(3),
+            Constraint::Length(1),  // gap between messages and input
+            Constraint::Length(input_height),
+        ]);
 
-        let [messages_area, input_area] = vertical.areas(area);
+        let [messages_area, _gap, input_area] = vertical.areas(area);
 
         self.messages_rect = messages_area;
         self.input_rect = input_area;
@@ -382,14 +524,14 @@ impl App {
         let available_width = (self.messages_rect.width.saturating_sub(4)) as usize;
 
         for msg in &self.messages {
-            let wrapped = wrap_text(&msg.text, available_width);
             if msg.role == "user" {
-                // User message with dark gray background (matches input box)
-                for line in wrapped {
-                    let padded = format!("  {}  ", line);
+                // User message with black background (matches input box)
+                let wrapped = wrap_text(&msg.text, available_width);
+                for line_text in wrapped {
+                    let padded = format!("  {}  ", line_text);
                     lines.push(Line::from(
                         vec![
-                            ratatui::text::Span::styled(
+                            Span::styled(
                                 padded,
                                 Style::default().bg(Color::Black),
                             )
@@ -397,9 +539,11 @@ impl App {
                     ));
                 }
             } else {
-                // Assistant message (plain)
-                for line in wrapped {
-                    lines.push(Line::from(line));
+                // Assistant message - wrapped text with markdown formatting
+                let wrapped = wrap_text(&msg.text, available_width);
+                for line_text in wrapped {
+                    let spans = parse_markdown_line(&line_text);
+                    lines.push(Line::from(spans));
                 }
             }
             lines.push(Line::from(""));
@@ -408,8 +552,9 @@ impl App {
         // Add pending response if streaming
         if !self.pending_response.is_empty() {
             let wrapped = wrap_text(&self.pending_response, available_width);
-            for line in wrapped {
-                lines.push(Line::from(line));
+            for line_text in wrapped {
+                let spans = parse_markdown_line(&line_text);
+                lines.push(Line::from(spans));
             }
         }
 
@@ -463,13 +608,19 @@ impl App {
     fn cursor_position(&self) -> (usize, usize) {
         let mut x = 0;
         let mut y = 0;
+        let mut byte_count = 0;
+
         for c in self.input.chars() {
+            if byte_count >= self.cursor_pos {
+                break;
+            }
             if c == '\n' {
                 y += 1;
                 x = 0;
             } else {
                 x += 1;
             }
+            byte_count += c.len_utf8();
         }
         (x, y)
     }
