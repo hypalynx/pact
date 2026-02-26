@@ -50,28 +50,55 @@ pub fn format_tokens(tokens: usize) -> String {
     }
 }
 
-pub fn fetch_context_window(endpoint: &str) -> usize {
+pub struct ServerInfo {
+    pub model_name: String,
+    pub context_window: usize,
+}
+
+pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
     let client = reqwest::blocking::Client::new();
 
     if let Ok(response) = client.get(&format!("{}/v1/models", endpoint)).send() {
         if let Ok(text) = response.text() {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                // Try data array format
                 if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
                     if let Some(first_model) = data.first() {
-                        if let Some(max_tokens) = first_model.get("max_tokens").and_then(|m| m.as_u64()) {
-                            return max_tokens as usize;
-                        }
+                        let model_name = first_model
+                            .get("id")
+                            .and_then(|id| id.as_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let context_window = first_model
+                            .get("max_tokens")
+                            .and_then(|m| m.as_u64())
+                            .unwrap_or(65535) as usize;
+                        return ServerInfo {
+                            model_name,
+                            context_window,
+                        };
                     }
                 }
 
-                if let Some(max_tokens) = json.get("max_tokens").and_then(|m| m.as_u64()) {
-                    return max_tokens as usize;
-                }
+                // Try single model response format
+                let model_name = json
+                    .get("id")
+                    .and_then(|id| id.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let context_window = json.get("max_tokens").and_then(|m| m.as_u64()).unwrap_or(65535) as usize;
+                return ServerInfo {
+                    model_name,
+                    context_window,
+                };
             }
         }
     }
 
-    65535
+    ServerInfo {
+        model_name: "unknown".to_string(),
+        context_window: 65535,
+    }
 }
 
 pub fn messages_path() -> PathBuf {

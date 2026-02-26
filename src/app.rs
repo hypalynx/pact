@@ -30,10 +30,12 @@ pub struct App {
     pub total_input_tokens: usize,
     pub total_output_tokens: usize,
     pub frame_count: u32,
+    pub last_server_check: u32,
     pub api_endpoint: String,
     pub max_tokens: usize,
     pub temperature: Option<f32>,
     pub mode_color: Option<String>,
+    pub model_name: String,
 }
 
 impl App {
@@ -75,10 +77,12 @@ impl App {
             total_input_tokens: 0,
             total_output_tokens: 0,
             frame_count: 0,
+            last_server_check: 0,
             api_endpoint,
             max_tokens,
             temperature,
             mode_color,
+            model_name: String::new(),
         }
     }
 
@@ -317,6 +321,18 @@ impl App {
         if let Some(mode_config) = self.modes_config.get(&self.mode_name) {
             self.temperature = mode_config.temperature;
             self.mode_color = mode_config.color.clone();
+        }
+    }
+
+    pub fn check_server_info(&mut self) {
+        // Refresh server info every ~3 seconds (roughly 188 frames at 16ms per frame)
+        const CHECK_INTERVAL: u32 = 188;
+
+        if self.frame_count.saturating_sub(self.last_server_check) >= CHECK_INTERVAL {
+            let server_info = crate::utils::fetch_server_info(&self.api_endpoint);
+            self.model_name = server_info.model_name;
+            self.context_window = server_info.context_window;
+            self.last_server_check = self.frame_count;
         }
     }
 }

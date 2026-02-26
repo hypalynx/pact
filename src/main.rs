@@ -31,6 +31,8 @@ fn main() -> std::io::Result<()> {
     let temperature = default_mode_config.as_ref().and_then(|m| m.temperature);
     let modes_config = config.ui.modes.clone();
 
+    let server_info = utils::fetch_server_info(&config.api.endpoint);
+
     let mut app = App::new(
         args.debug,
         config.api.endpoint.clone(),
@@ -40,7 +42,8 @@ fn main() -> std::io::Result<()> {
         modes_config,
     );
     app.history = App::load_history().unwrap_or_default();
-    app.context_window = utils::fetch_context_window(&config.api.endpoint);
+    app.context_window = server_info.context_window;
+    app.model_name = server_info.model_name;
 
     loop {
         terminal.draw(|f| ui::draw_app(&mut app, f))?;
@@ -161,6 +164,7 @@ fn main() -> std::io::Result<()> {
         }
 
         app.frame_count = app.frame_count.wrapping_add(1);
+        app.check_server_info();
     }
 
     execute!(stdout(), DisableMouseCapture)?;

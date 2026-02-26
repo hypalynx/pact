@@ -229,7 +229,8 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         0
     };
     let right_text = format!(
-        "{}/{} ({}%)",
+        "{} | {}/{} ({}%)",
+        app.model_name,
         format_tokens(tokens_used),
         format_tokens(app.context_window),
         percentage
