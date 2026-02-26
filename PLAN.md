@@ -1,250 +1,402 @@
-# Pact Testing Plan
+# Pact Development Roadmap
 
-## Overview
-This document outlines the testing strategy for Pact TUI as the codebase grows. Tests should focus on behavior and integration points rather than implementation details.
+## Quick Reference: What's Next
 
-## Unit Tests
+### Current Focus: Communication & Debugging (Feb 26, 2026)
+**Priority:** Get protocol communication rock-solid before expanding tool support
 
-### `config.rs`
-- **Mode merging**: User config overrides defaults correctly
-  - Test: build mode (cyan) can be overridden to (magenta)
-  - Test: New custom mode (e.g., "chat") is added alongside defaults
-  - Test: Empty user config uses all defaults
-- **Color parsing**: Invalid colors fall back gracefully
-  - Test: "invalid_color" → defaults to white
-  - Test: Case insensitivity: "CYAN", "Cyan", "cyan" all work
-- **Config loading**
-  - Test: Missing config file → defaults loaded
-  - Test: Malformed YAML → defaults loaded
-  - Test: Valid YAML with partial overrides merges correctly
+1. **Communication Protocol Improvements**
+   - [ ] Improve tool descriptions (opencode sends 8-11, pact sends minimal)
+   - [ ] Better message formatting (both sent and received)
+   - [ ] Process reasoning/thinking tokens from models
+   - [ ] Refactor system message handling (dedicated system message vs prepend)
+   - [ ] Message content array format `[{"type": "text", "text": "..."}]`
 
-### `text.rs`
-- **Text wrapping**
-  - Test: Text wrapping respects width limits
-  - Test: Word boundaries preserved (no mid-word breaks)
-  - Test: Newlines in input create separate lines
-  - Test: Single long word wider than width is not broken
-  - Test: Empty strings handled
-- **Markdown parsing**
-  - Test: **bold** text parsed correctly
-  - Test: *italic* text parsed correctly
-  - Test: `code` text parsed correctly
-  - Test: Mixed formatting works
-  - Test: Invalid markdown handled gracefully
+2. **Debug Infrastructure**
+   - [ ] Add debug UI inside pact (accessible from control panel)
+   - [ ] Migrate from `api.log` to SQLite database storage
+   - [ ] Control panel UI for cache/log management
 
-### `utils.rs`
-- **Color parsing** (already in config, but test independently)
-  - Test: All supported color names work
-  - Test: Variants (dark_gray, darkgray, dark-gray) all work
-  - Test: Invalid color defaults to white
-- **Server info parsing**
-  - Test: Standard `/v1/models` response with data array parsed
-  - Test: Single model response parsed
-  - Test: Missing fields use sensible defaults
-  - Test: Network error returns unknown model, default context
+3. **Data Storage**
+   - [ ] Move from JSON (`messages.json`) to SQLite
+   - [ ] Store debug logs in SQLite (with timestamps, type filtering)
+   - [ ] Control panel for managing stored data
 
-## Integration Tests
+---
 
-### Mode System
-- **Mode cycling**
-  - Test: Tab key cycles through all modes in config order
-  - Test: Cycling wraps around to first mode
-  - Test: Temperature updates when mode changes
-  - Test: Color updates when mode changes
-  - Test: System prompt updates when mode changes
-- **Mode persistence**
-  - Test: Default mode from config is loaded on startup
+## Analysis & Findings
 
-### Message Handling
-- **User message submission**
-  - Test: Ctrl+J creates newline in input
-  - Test: Enter submits message and clears input
-  - Test: Message saved to history
-  - Test: System prompt prepended to LLM request
-- **LLM response streaming**
-  - Test: Token events accumulate into pending_response
-  - Test: Done event moves pending_response to messages
-  - Test: Error event shows error message
-  - Test: Usage events update token counters
+### mitmproxy Analysis Results (Feb 26, 2026)
 
-### Server Info Refresh
-- **Periodic refresh**
-  - Test: Server info queried on startup
-  - Test: Server info refreshed every ~3 seconds
-  - Test: Model name updates in status bar when server changes
-  - Test: Context window updates when model changes
-- **Network resilience**
-  - Test: Failed refresh doesn't crash app
-  - Test: Model name remains unchanged on failed refresh
-  - Test: Continues retrying after transient failures
+**6 traffic files analyzed** (llama.cpp ↔ opencode communication):
+- traffic.json, traffic-reading-readme.json, traffic-review-mainrs.json
+- traffic-potentially-dangerous.json, non-editing-4b-traffic.json, yellow-to-red-edit-traffic.json
 
-### Text Input/History
-- **Readline commands**
-  - Test: Ctrl+A moves cursor to start
-  - Test: Ctrl+E moves cursor to end
-  - Test: Ctrl+W kills word backward
-  - Test: Ctrl+U kills line
-  - Test: Up/Down arrows navigate history
-  - Test: History preserved across sessions (from messages.json)
-- **Multi-line input**
-  - Test: Ctrl+J adds newline
-  - Test: Backspace deletes characters correctly
-  - Test: Cursor position tracked correctly with newlines
+#### Key Differences: Opencode vs Pact
 
-### Scrolling
-- **Mouse wheel**
-  - Test: Scroll up/down changes scroll_offset
-  - Test: At bottom → user_scrolled = false
-  - Test: Manually scrolled → auto-scroll disabled until bottom
-- **Keyboard**
-  - Test: Page Up/Down scroll 3 lines
-  - Test: Scrollbar position reflects scroll offset
+| Aspect | Opencode | Pact | Gap |
+|--------|----------|------|-----|
+| Tool Count | 8-11 per request | 1 (read) | Missing bash, glob, grep, edit, write, etc. |
+| Tool Descriptions | Full JSON schema + examples | Minimal | Need better descriptions |
+| Message Format | `[{"type": "text", "text": "..."}]` | Plain strings | Array format more extensible |
+| System Message | Dedicated `role: "system"` message | Prepended to first user | Standard approach cleaner |
+| Parameter Names | camelCase (filePath) | snake_case (file_path) | Alignment needed |
+| Thinking Tokens | Streams `reasoning_content` separately | Not processed | Need to capture & display |
+| Stream Options | `{"include_usage": true}` | Present | Already good |
+| Auth | `Bearer none` for local | Same | ✓ Compatible |
 
-## End-to-End Tests
+#### Tool Patterns from Opencode
+- **Execution**: Synchronous, immediate results via SSE delta.tool_calls
+- **Tool Results**: Sent as `{"role": "tool", "tool_call_id": "...", "content": "result"}`
+- **Error Handling**: All observed calls succeeded; assume failures sent as tool result content
+- **Parameters**: Consistently camelCase with clear descriptions and optional fields marked
 
-### Full workflow
-1. Start app → loads config, detects model, shows status bar
-2. Switch mode (Tab) → system prompt/temperature/color change
-3. Type message with Ctrl+J newlines → submit with Enter
-4. Receive streaming response → tokens accumulate, auto-scroll
-5. Scroll up → disable auto-scroll, scroll position maintained
-6. Switch modes → temperature/prompt change for next message
-7. Restart LLM with different model → detected within 3 seconds
+#### Protocol Constants
+- Endpoint: POST `/v1/chat/completions`
+- Headers: `Content-Type: application/json`, `Accept: */*`
+- Response: Server-Sent Events (text/event-stream)
+- Model field: Always `"model": "local"` (or explicit model name)
 
-## Test Execution Plan
+---
 
-1. **Unit tests first** - Fast feedback on individual functions
-2. **Integration tests** - Verify modules work together
-3. **E2E tests** - Catch regressions in full workflow
+## Communication Protocol Improvements
 
-## Mock/Fixture Strategy
+### 1. Tool Description Enhancement
 
-- Mock LLM server responses (SSE format)
-- Mock filesystem for config/history
-- Create test configs with various combinations
-- Pre-made message histories for testing
+**Current Problem**: Pact's tool definitions are minimal; opencode provides comprehensive schemas with examples.
 
-## Tool Use Implementation
+**Action Items**:
+- [ ] Review opencode's tool definitions from traffic files
+- [ ] Extract "best practices" for clear, LLM-friendly descriptions
+- [ ] Create tool description guidelines:
+  - Clear, single-sentence summary
+  - Parameter descriptions: type, constraints, examples
+  - Mark optional vs required
+  - Note any restrictions (file size limits, path requirements, etc.)
+- [ ] Apply to existing `read` tool and incoming `bash`, `glob`, `grep`
 
-### Overview
-Add OpenAI-compatible tool/function calling to Pact. LLM can request tools like read, edit, bash to interact with the filesystem and system. Results are sent back to the LLM in the conversation.
+**Example: Current `read` vs Improved**
+```rust
+// Current
+"description": "Read file contents"
 
-### Tools to Implement (Priority Order)
-
-1. **read** (NEXT)
-   - Read file contents at given path
-   - Return file contents or error message
-   - Max size limit? (e.g., 64KB per read to avoid huge responses)
-
-2. **bash** (AFTER read)
-   - Execute shell commands
-   - Capture stdout/stderr
-   - Return exit code + output
-   - Security: Consider sandboxing/restrictions
-
-3. **edit**
-   - Modify file at path (similar to our Edit tool)
-   - Line-based or full replacement
-
-4. **glob**
-   - Find files matching pattern
-   - Return list of paths
-
-5. **grep**
-   - Search file contents for patterns
-   - Return matching lines with context
-
-6. **todowrite**
-   - Create/update todo items
-   - Store in standard location
-
-### Tool Schema Format (OpenAI-compatible)
-
-```json
-{
-  "type": "function",
-  "function": {
-    "name": "read",
-    "description": "Read contents of a file",
-    "parameters": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "description": "Absolute file path to read"
-        }
-      },
-      "required": ["path"]
-    }
-  }
-}
+// Improved
+"description": "Read the complete contents of a file. Returns text content up to 64KB; larger files are truncated with a warning message."
 ```
 
-### Implementation Plan
+### 2. Message Formatting
 
-1. **New module: `tools.rs`**
-   - Define tool schemas
-   - Implement tool execution functions
-   - Handle tool responses
+**Sent Messages**:
+- [ ] Switch to array format: `{"role": "user", "content": [{"type": "text", "text": "..."}]}`
+- [ ] Maintain backward compatibility during transition
+- [ ] Benefits: Extensible (images, tool results, etc.), matches OpenAI standard
 
-2. **Update `llm.rs`**
-   - Include tools array in request
-   - Parse `tool_use` / `function_call` responses
-   - Return tool calls to main loop instead of just tokens
+**Received Responses**:
+- [ ] Capture `reasoning_content` from SSE chunks (separate from `content`)
+- [ ] Process thinking tokens:
+  - Store in message history with role/type tracking
+  - Display in UI (toggleable? separate pane? gray/dimmed?)
+  - Include in token counts
+- [ ] Current: Only process `delta.content`, miss thinking tokens
 
-3. **Update `app.rs` / event loop**
-   - Handle tool call responses
-   - Execute tools synchronously (for now)
-   - Send tool results back to LLM as assistant message
-   - Continue conversation
+**Implementation Note**: For now, collect reasoning content but defer UI rendering decision to control panel phase.
 
-4. **New LlmEvent variant**
-   - `ToolCall { name, args }` - LLM wants to use a tool
-   - Display in UI or execute immediately?
+### 3. System Message Refactor
 
-### Response Flow
+**Current Approach**: Prepend system prompt to first user message
+```rust
+messages.push(Message {
+    role: "user",
+    content: format!("{}\n\n{}", system_prompt, user_text)
+});
+```
 
-1. User sends message
-2. LLM responds with potential tool calls
-3. App executes tool, gets result
-4. App sends tool result back to LLM as new message
-5. LLM continues with tool result context
-6. Process repeats until LLM stops calling tools
+**Proposed Approach**: Dedicated system message
+```rust
+messages.push(Message { role: "system", content: system_prompt });
+messages.push(Message { role: "user", content: user_text });
+```
 
-### Considerations
+**Benefits**:
+- Standard OpenAI-compatible format
+- Models may weight system messages differently
+- Cleaner message list logic
+- Easier to swap system prompts without touching user content
 
-- **Sync vs Async**: Tool execution blocks? Or spawn threads?
-- **Security**: What paths can be read? Sandboxing?
-- **UI**: How to show tool execution to user? Transparent or explicit?
-- **Error handling**: What if tool fails? Send error to LLM?
-- **Large responses**: Truncate huge file reads?
+**Implementation**: Low risk refactor, should not affect model behavior.
 
-## Known Gaps
+---
 
-- No tests for UI rendering (ratatui widgets are hard to test)
-- No performance tests (token accumulation speed, large message counts)
-- No stress tests (very long input, many modes, rapid mode switching)
-- Display rendering tested manually
+## Debug Infrastructure (New)
 
-## Upcoming Work
+### Problem
+- `api.log` is file-based, cumbersome to review mid-session
+- No way to view communication errors from inside pact
+- Need to tail file separately or switch windows
+- No filtering/search capabilities
+- Will need frequent debugging as we expand tool support
 
-### 1. Analyze opencode + mitmproxy
-- Run opencode with mitmproxy intercepting traffic to local LLM
-- Understand tool use patterns with Qwen model
-- Inform better understanding of tool invocation protocol
+### Solution: Debug UI inside Pact
 
-### 2. Implement slash commands (/clear, etc.)
-- Add support for `/clear` to clear conversation context
-- Parse slash commands from user input before sending to LLM
-- Foundation for adding more commands later
+**Location**: Accessible via Tab or dedicated key (e.g., Ctrl+D or from control panel)
 
-### 3. Implement @ file reference autocomplete
-- Type `@` to trigger file autocomplete suggestions
-- Display matched file paths in cyan (highlighted) in input
-- Pass absolute file path to LLM when submitting
-- Similar to GitHub/other tools' @ mention syntax
+**Debug View Features**:
+1. **Request/Response Log**
+   - Timestamp, HTTP method/endpoint
+   - Request body (tools, messages count, model)
+   - Response status, model name, tokens
+   - Search/filter by timestamp, type, error status
+   - Collapse/expand full request/response bodies
 
-### 4. Extend tool support (glob, grep)
-- Add `glob` tool for file pattern matching
-- Add `grep` tool (use ripgrep if available, fallback to standard grep)
-- Expand LLM's ability to search and explore codebase
+2. **Communication Errors**
+   - Show last N errors prominently
+   - SSE parse failures
+   - Network errors
+   - Tool execution failures
+
+3. **Tool Execution Log**
+   - Which tools called, with arguments (truncated)
+   - Execution time, success/failure
+   - Tool result summary
+
+4. **Control Panel** (accessible from debug view)
+   - Clear all logs
+   - Toggle log capture (on/off)
+   - Export logs to file
+   - Filter by log level (info, warning, error)
+
+**Data Storage**: SQLite database (see below)
+
+---
+
+## Data Storage: JSON → SQLite
+
+### Current State
+- Messages: `~/.local/share/pact/messages.json` (JSON array)
+- Logs: `api.log` in current working directory (plain text)
+- Config: `~/.config/pact/pact.yaml` (YAML, keep as-is)
+
+### Proposed: SQLite Database
+
+**Location**: `~/.local/share/pact/pact.db`
+
+**Schema**:
+
+```sql
+-- Messages table
+CREATE TABLE messages (
+  id INTEGER PRIMARY KEY,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  role TEXT NOT NULL,           -- 'user', 'assistant', 'system', 'tool'
+  content TEXT NOT NULL,        -- message text
+  is_tool_result BOOLEAN,       -- true if tool result
+  tool_call_id TEXT,            -- link to tool call if is_tool_result
+  tokens_prompt INTEGER,        -- from usage event
+  tokens_completion INTEGER,    -- from usage event
+  reasoning_content TEXT        -- thinking tokens (optional)
+);
+
+-- API request/response log
+CREATE TABLE api_logs (
+  id INTEGER PRIMARY KEY,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  request_body TEXT NOT NULL,   -- full JSON
+  response_status TEXT,         -- status code / error
+  response_body TEXT,           -- full response (truncate if huge?)
+  tokens_prompt INTEGER,
+  tokens_completion INTEGER,
+  duration_ms INTEGER,
+  error_message TEXT            -- if request failed
+);
+
+-- Tool execution log
+CREATE TABLE tool_logs (
+  id INTEGER PRIMARY KEY,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  tool_name TEXT NOT NULL,
+  tool_args TEXT,               -- JSON arguments (truncated)
+  success BOOLEAN,
+  result_text TEXT,             -- tool output (truncated)
+  execution_ms INTEGER,
+  error_message TEXT
+);
+
+-- Debug settings
+CREATE TABLE debug_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+```
+
+**Benefits**:
+- Query-able: filter by timestamp, status, tool name
+- Compact: better compression than text/JSON
+- Structured: timestamps, types already parsed
+- Control panel can query efficiently
+- Can export subsets easily (last 100 messages, errors only, etc.)
+
+**Migration**:
+- [ ] Load existing `messages.json` on first startup
+- [ ] Create DB, populate from JSON
+- [ ] Continue using DB for new messages
+- [ ] Keep JSON as backup/export option
+
+---
+
+## Control Panel UI
+
+### Access Point
+- Modal accessible from main view (e.g., `Ctrl+Shift+P` or menu)
+- Or dedicated view (switchable from main conversation)
+
+### Sections
+
+#### 1. Message History
+- List of saved conversations
+- Quick view: message count, last message date, token usage
+- Actions: Load conversation, delete, export
+- Filter by date range, model used
+
+#### 2. Debug Logs
+- Last 50 API calls (scroll to see more)
+- Each entry: timestamp, endpoint, status, duration, tokens
+- Click to expand full request/response
+- Filter: error only, time range, tool filter
+- Control: Clear all logs, pause logging, export
+
+#### 3. Tool Execution History
+- Recent tool calls and results
+- Each: tool name, args, success/failure, timing
+- Filter: tool type, status, time range
+- Good for debugging tool failures
+
+#### 4. Settings
+- Log capture: on/off
+- Log retention: days (auto-cleanup old logs)
+- Export format: JSON, CSV, SQL
+- Database size: show current size, option to compact/vacuum
+
+#### 5. Status
+- DB file size
+- Message count
+- Total tokens used (lifetime)
+- Last request timestamp
+
+---
+
+## Implementation Phases
+
+### Phase 0: Communication Protocol (NEXT)
+**Goal**: Ensure pact sends/receives data like opencode, ready for tool expansion
+
+1. Tool description audit
+   - [ ] Review opencode schemas from traffic files
+   - [ ] Define description guidelines
+   - [ ] Update existing tools
+
+2. Message format improvements
+   - [ ] Capture reasoning_content from SSE
+   - [ ] Switch to array format (messages)
+   - [ ] System message refactor
+
+3. Testing
+   - [ ] Verify compatible with same LLM server
+   - [ ] Compare requests to opencode traffic
+   - [ ] No regression in existing functionality
+
+**Estimated Scope**: 5-8 hours (includes refactoring + testing)
+
+### Phase 1: Debug Infrastructure
+**Goal**: Have debug UI + SQLite ready before expanding tools
+
+1. SQLite migration
+   - [ ] Design schema
+   - [ ] Create database module
+   - [ ] Load existing messages.json on startup
+   - [ ] Update app to save messages to DB
+
+2. Debug UI
+   - [ ] Create debug view (ratatui panel)
+   - [ ] Query recent API logs
+   - [ ] Display request/response
+   - [ ] Show errors
+
+3. Control panel
+   - [ ] Message history view
+   - [ ] Debug log viewer
+   - [ ] Settings/cache management
+   - [ ] Data export
+
+**Estimated Scope**: 10-15 hours
+
+### Phase 2: Core Tools
+**Goal**: bash, glob, grep with proper logging
+
+1. Implement bash tool
+2. Implement glob tool
+3. Implement grep tool
+4. Test with debug UI to catch edge cases
+
+**Estimated Scope**: 6-10 hours (benefits from phases 0-1 being solid)
+
+### Phase 3: UX Enhancements (Lower Priority)
+- Slash commands (/clear, etc.)
+- @ file references
+- Better tool execution feedback
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+- Tool execution (success, errors, timeouts)
+- Message formatting (array structure, role handling)
+- SQLite schema queries
+- Reasoning content capture
+
+### Integration Tests
+- Full message flow (send → receive → store in DB)
+- Tool invocation → execution → result storage
+- Debug log querying
+- Message history loading
+
+### Manual Testing
+- Verify requests match opencode format
+- Test debug UI with various log scenarios
+- Control panel functionality (filters, export)
+- Performance with large message history (1000+ messages)
+
+---
+
+## Known Gaps & Risks
+
+- **UI Complexity**: Control panel is significant new surface area
+- **Database Migration**: Existing `messages.json` must not be lost
+- **Performance**: Querying SQLite with many messages (>10k)
+- **Thinking Tokens**: UI rendering approach TBD (impacts user experience)
+- **Backwards Compatibility**: Message format change might affect saved data
+
+---
+
+## Decision Points (Before Proceeding)
+
+1. **Debug UI Approach**
+   - Option A: Modal overlay (like control panel)
+   - Option B: Dedicated switchable view (like chat view)
+   - Option C: Side panel (if screen space permits)
+
+2. **Thinking Token Display**
+   - Option A: Hide by default, show in control panel
+   - Option B: Show as separate "thinking:" section in messages
+   - Option C: Collapse/expand arrows next to assistant messages
+   - Option D: Separate "reasoning" pane
+
+3. **Log Retention**
+   - Keep all logs indefinitely?
+   - Auto-delete after N days?
+   - Manual management in control panel?
+
+4. **Message Format Migration**
+   - All-at-once (breaking change if loading old history)?
+   - Gradual (support both formats)?
+   - Just for new messages, old format grandfathered?
