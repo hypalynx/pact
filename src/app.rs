@@ -267,9 +267,7 @@ impl App {
         if self.cursor_pos > 0 {
             let byte_pos = self
                 .input
-                .char_indices()
-                .filter(|(i, _)| *i < self.cursor_pos)
-                .next_back()
+                .char_indices().rfind(|(i, _)| *i < self.cursor_pos)
                 .map(|(i, _)| i)
                 .unwrap_or(0);
             self.input.remove(byte_pos);
@@ -300,9 +298,7 @@ impl App {
         if self.cursor_pos > 0 {
             let byte_pos = self
                 .input
-                .char_indices()
-                .filter(|(i, _)| *i < self.cursor_pos)
-                .next_back()
+                .char_indices().rfind(|(i, _)| *i < self.cursor_pos)
                 .map(|(i, _)| i)
                 .unwrap_or(0);
             self.cursor_pos = byte_pos;
