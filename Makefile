@@ -5,8 +5,10 @@ run:
 
 test: fmt
 
-fmt:
+lint:
 	cargo fmt --check
+	cargo clippy
 
-fmt-fix:
+lint-fix:
 	cargo fmt
+	cargo clippy --fix
