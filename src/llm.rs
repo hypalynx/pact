@@ -24,6 +24,8 @@ pub fn call_llm(
     debug: bool,
     endpoint: &str,
     max_tokens: usize,
+    temperature: Option<f32>,
+    system_prompt: Option<String>,
 ) {
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(300))
@@ -36,17 +38,28 @@ pub fn call_llm(
         }
     };
 
-    let msg_payload: Vec<_> = messages
-        .iter()
-        .map(|m| json!({ "role": m.role, "content": m.text }))
-        .collect();
+    let mut msg_payload: Vec<_> = Vec::new();
 
-    let body = json!({
+    // Prepend system prompt as first user message if present
+    if let Some(prompt) = system_prompt {
+        msg_payload.push(json!({ "role": "user", "content": prompt }));
+    }
+
+    // Add conversation messages
+    for m in messages {
+        msg_payload.push(json!({ "role": m.role, "content": m.text }));
+    }
+
+    let mut body = json!({
         "model": "local",
         "max_tokens": max_tokens,
         "stream": true,
         "messages": msg_payload,
     });
+
+    if let Some(temp) = temperature {
+        body["temperature"] = json!(temp);
+    }
 
     if debug {
         let _ = fs::OpenOptions::new()

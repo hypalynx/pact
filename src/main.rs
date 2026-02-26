@@ -27,7 +27,18 @@ fn main() -> std::io::Result<()> {
 
     execute!(stdout(), EnableMouseCapture)?;
 
-    let mut app = App::new(args.debug, config.api.endpoint.clone(), config.api.max_tokens);
+    let default_mode_config = config.ui.modes.get(&config.ui.default_mode).cloned();
+    let temperature = default_mode_config.as_ref().and_then(|m| m.temperature);
+    let modes_config = config.ui.modes.clone();
+
+    let mut app = App::new(
+        args.debug,
+        config.api.endpoint.clone(),
+        config.api.max_tokens,
+        temperature,
+        config.ui.default_mode.clone(),
+        modes_config,
+    );
     app.history = App::load_history().unwrap_or_default();
     app.context_window = utils::fetch_context_window(&config.api.endpoint);
 
@@ -116,10 +127,7 @@ fn main() -> std::io::Result<()> {
                             app.submit_message();
                         }
                         KeyCode::Tab => {
-                            app.mode = match app.mode {
-                                app::Mode::Build => app::Mode::Plan,
-                                app::Mode::Plan => app::Mode::Build,
-                            };
+                            app.cycle_mode();
                         }
                         KeyCode::Up => app.history_up(),
                         KeyCode::Down => app.history_down(),

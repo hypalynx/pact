@@ -9,6 +9,22 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+fn parse_color(color_str: &str) -> Color {
+    match color_str.to_lowercase().as_str() {
+        "black" => Color::Black,
+        "red" => Color::Red,
+        "green" => Color::Green,
+        "yellow" => Color::Yellow,
+        "blue" => Color::Blue,
+        "magenta" => Color::Magenta,
+        "cyan" => Color::Cyan,
+        "white" => Color::White,
+        "gray" | "grey" => Color::Gray,
+        "dark_gray" | "darkgray" | "dark-gray" => Color::DarkGray,
+        _ => Color::White,
+    }
+}
+
 pub fn draw_app(app: &mut App, frame: &mut Frame) {
     let margin = ratatui::layout::Margin::new(1, 1);
     let area = frame.area().inner(margin);
@@ -189,15 +205,15 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     }
 
     left_spans.push(Span::raw(" "));
-    let mode_color = match app.mode {
-        crate::app::Mode::Build => Color::Cyan,
-        crate::app::Mode::Plan => Color::Green,
-    };
-    let mode_text = match app.mode {
-        crate::app::Mode::Build => "build",
-        crate::app::Mode::Plan => "plan",
-    };
-    left_spans.push(Span::styled(mode_text, Style::default().fg(mode_color)));
+    let mode_color = app
+        .mode_color
+        .as_ref()
+        .map(|c| parse_color(c))
+        .unwrap_or(Color::White);
+    left_spans.push(Span::styled(
+        app.mode_name.clone(),
+        Style::default().fg(mode_color),
+    ));
 
     if app.loading {
         left_spans.push(Span::raw(" "));

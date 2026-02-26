@@ -1405,6 +1405,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
+ "indexmap",
  "pulldown-cmark",
  "ratatui",
  "reqwest",

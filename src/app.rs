@@ -4,12 +4,7 @@ use std::fs;
 use std::io;
 use std::sync::mpsc;
 use ratatui::layout::Rect;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Mode {
-    Build,
-    Plan,
-}
+use indexmap::IndexMap;
 
 pub struct App {
     pub messages: Vec<Message>,
@@ -28,18 +23,34 @@ pub struct App {
     pub user_scrolled: bool,
     pub was_at_bottom: bool,
     pub dragging_scrollbar: bool,
-    pub mode: Mode,
+    pub mode_name: String,
+    pub available_modes: Vec<String>,
+    pub modes_config: IndexMap<String, crate::config::Mode>,
     pub context_window: usize,
     pub total_input_tokens: usize,
     pub total_output_tokens: usize,
     pub frame_count: u32,
     pub api_endpoint: String,
     pub max_tokens: usize,
+    pub temperature: Option<f32>,
+    pub mode_color: Option<String>,
 }
 
 impl App {
-    pub fn new(debug: bool, api_endpoint: String, max_tokens: usize) -> Self {
+    pub fn new(
+        debug: bool,
+        api_endpoint: String,
+        max_tokens: usize,
+        temperature: Option<f32>,
+        mode_name: String,
+        modes_config: IndexMap<String, crate::config::Mode>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
+        let available_modes: Vec<String> = modes_config.keys().cloned().collect();
+        let mode_color = modes_config
+            .get(&mode_name)
+            .and_then(|m| m.color.clone());
+
         Self {
             messages: Vec::new(),
             history: Vec::new(),
@@ -57,13 +68,17 @@ impl App {
             user_scrolled: false,
             was_at_bottom: true,
             dragging_scrollbar: false,
-            mode: Mode::Build,
+            mode_name,
+            available_modes,
+            modes_config,
             context_window: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
             frame_count: 0,
             api_endpoint,
             max_tokens,
+            temperature,
+            mode_color,
         }
     }
 
@@ -115,9 +130,14 @@ impl App {
         let debug = self.debug;
         let endpoint = self.api_endpoint.clone();
         let max_tokens = self.max_tokens;
+        let temperature = self.temperature;
+        let system_prompt = self
+            .modes_config
+            .get(&self.mode_name)
+            .and_then(|m| m.system_prompt.clone());
 
         std::thread::spawn(move || {
-            crate::llm::call_llm(messages, tx, debug, &endpoint, max_tokens);
+            crate::llm::call_llm(messages, tx, debug, &endpoint, max_tokens, temperature, system_prompt);
         });
     }
 
@@ -277,5 +297,26 @@ impl App {
 
         self.input.drain(line_start..self.cursor_pos);
         self.cursor_pos = line_start;
+    }
+
+    pub fn cycle_mode(&mut self) {
+        if self.available_modes.is_empty() {
+            return;
+        }
+
+        let current_idx = self
+            .available_modes
+            .iter()
+            .position(|m| m == &self.mode_name)
+            .unwrap_or(0);
+
+        let next_idx = (current_idx + 1) % self.available_modes.len();
+        self.mode_name = self.available_modes[next_idx].clone();
+
+        // Update temperature and color from the new mode config
+        if let Some(mode_config) = self.modes_config.get(&self.mode_name) {
+            self.temperature = mode_config.temperature;
+            self.mode_color = mode_config.color.clone();
+        }
     }
 }

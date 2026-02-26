@@ -14,3 +14,4 @@ reqwest = { version = "0.12", features = ["blocking", "json"] }
 clap = { version = "4", features = ["derive"] }
 pulldown-cmark = "0.9"
 serde_yaml = "0.9"
+indexmap = { version = "2", features = ["serde"] }
