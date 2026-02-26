@@ -1,10 +1,10 @@
+use crate::tools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::mpsc;
 use std::time::Duration;
-use crate::tools;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -18,8 +18,14 @@ pub enum LlmEvent {
     Token(String),
     Done,
     Error(String),
-    Usage { input_tokens: usize, output_tokens: usize },
-    ToolCall { name: String, args: serde_json::Map<String, serde_json::Value> },
+    Usage {
+        input_tokens: usize,
+        output_tokens: usize,
+    },
+    ToolCall {
+        name: String,
+        args: serde_json::Map<String, serde_json::Value>,
+    },
 }
 
 pub fn call_llm(
@@ -78,13 +84,21 @@ pub fn call_llm(
             .and_then(|mut file| {
                 writeln!(file, "=== REQUEST {} ===", chrono::Local::now())?;
                 writeln!(file, "POST {}/v1/messages", endpoint)?;
-                writeln!(file, "{}", serde_json::to_string_pretty(&body).unwrap_or_default())?;
+                writeln!(
+                    file,
+                    "{}",
+                    serde_json::to_string_pretty(&body).unwrap_or_default()
+                )?;
                 writeln!(file, "\n=== RESPONSE ===")?;
                 Ok(())
             });
     }
 
-    let response = match client.post(&format!("{}/v1/messages", endpoint)).json(&body).send() {
+    let response = match client
+        .post(&format!("{}/v1/messages", endpoint))
+        .json(&body)
+        .send()
+    {
         Ok(r) => r,
         Err(e) => {
             let _ = tx.send(LlmEvent::Error(format!("Request failed: {}", e)));
@@ -122,7 +136,11 @@ pub fn call_llm(
                     if debug {
                         if let Some(delta) = json_val.get("delta") {
                             if let Some(ref mut f) = log_file {
-                                let _ = writeln!(f, "DELTA: {}", serde_json::to_string_pretty(&delta).unwrap_or_default());
+                                let _ = writeln!(
+                                    f,
+                                    "DELTA: {}",
+                                    serde_json::to_string_pretty(&delta).unwrap_or_default()
+                                );
                             }
                         }
                     }
@@ -139,15 +157,25 @@ pub fn call_llm(
                             if let Some(tool_json_start) = delta.find('{') {
                                 if let Some(tool_json_end) = delta.rfind('}') {
                                     let tool_json_str = &delta[tool_json_start..=tool_json_end];
-                                    if let Ok(tool_json) = serde_json::from_str::<serde_json::Value>(tool_json_str) {
-                                        let mut name = tool_json.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                                    if let Ok(tool_json) =
+                                        serde_json::from_str::<serde_json::Value>(tool_json_str)
+                                    {
+                                        let mut name = tool_json
+                                            .get("name")
+                                            .and_then(|n| n.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
                                         let mut args = serde_json::Map::new();
 
                                         // Handle both "file" and "path" parameter names
-                                        if let Some(file_arg) = tool_json.get("arguments").and_then(|a| a.get("file")) {
+                                        if let Some(file_arg) =
+                                            tool_json.get("arguments").and_then(|a| a.get("file"))
+                                        {
                                             args.insert("path".to_string(), file_arg.clone());
                                         }
-                                        if let Some(path_arg) = tool_json.get("arguments").and_then(|a| a.get("path")) {
+                                        if let Some(path_arg) =
+                                            tool_json.get("arguments").and_then(|a| a.get("path"))
+                                        {
                                             args.insert("path".to_string(), path_arg.clone());
                                         }
 
@@ -177,7 +205,11 @@ pub fn call_llm(
                     {
                         if debug {
                             if let Some(ref mut f) = log_file {
-                                let _ = writeln!(f, "TOOL_CALLS: {}", serde_json::to_string_pretty(&tool_calls).unwrap_or_default());
+                                let _ = writeln!(
+                                    f,
+                                    "TOOL_CALLS: {}",
+                                    serde_json::to_string_pretty(&tool_calls).unwrap_or_default()
+                                );
                             }
                         }
                         for tool_call in tool_calls {
@@ -187,7 +219,9 @@ pub fn call_llm(
                                     function.get("arguments").and_then(|a| a.as_str()),
                                 ) {
                                     // Parse arguments JSON
-                                    if let Ok(args_json) = serde_json::from_str::<serde_json::Value>(args_str) {
+                                    if let Ok(args_json) =
+                                        serde_json::from_str::<serde_json::Value>(args_str)
+                                    {
                                         if let Some(args_obj) = args_json.as_object() {
                                             let _ = tx.send(LlmEvent::ToolCall {
                                                 name: name.to_string(),
@@ -202,8 +236,14 @@ pub fn call_llm(
 
                     // Check for usage
                     if let Some(usage) = json_val.get("usage") {
-                        let input_tokens = usage.get("input_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
-                        let output_tokens = usage.get("output_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
+                        let input_tokens = usage
+                            .get("input_tokens")
+                            .and_then(|t| t.as_u64())
+                            .unwrap_or(0) as usize;
+                        let output_tokens = usage
+                            .get("output_tokens")
+                            .and_then(|t| t.as_u64())
+                            .unwrap_or(0) as usize;
 
                         if input_tokens > 0 || output_tokens > 0 {
                             let _ = tx.send(LlmEvent::Usage {

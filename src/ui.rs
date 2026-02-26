@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::text::{parse_markdown_line, wrap_text};
-use crate::utils::{get_pwd_display, get_git_branch, format_tokens};
+use crate::utils::{format_tokens, get_git_branch, get_pwd_display};
 use ratatui::Frame;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -29,9 +29,8 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     let margin = ratatui::layout::Margin::new(1, 1);
     let area = frame.area().inner(margin);
 
-    let input_lines = (app.input.lines().count()
-        + if app.input.ends_with('\n') { 1 } else { 0 })
-    .max(1) as u16;
+    let input_lines =
+        (app.input.lines().count() + if app.input.ends_with('\n') { 1 } else { 0 }).max(1) as u16;
     let input_height = (input_lines + 2).min(10).max(3);
 
     let vertical = Layout::vertical([
@@ -69,11 +68,7 @@ fn draw_messages(app: &App, frame: &mut Frame) {
                 } else {
                     Style::default().bg(Color::Black)
                 };
-                lines.push(Line::from(
-                    vec![
-                        Span::styled(padded, style)
-                    ]
-                ));
+                lines.push(Line::from(vec![Span::styled(padded, style)]));
             }
         } else {
             let wrapped = wrap_text(&msg.text, available_width);
@@ -126,14 +121,20 @@ fn draw_messages(app: &App, frame: &mut Frame) {
     }
 
     if line_count > app.messages_rect.height {
-        let scrollbar_height = (app.messages_rect.height as f64 * app.messages_rect.height as f64 / line_count as f64).max(1.0) as u16;
+        let scrollbar_height = (app.messages_rect.height as f64 * app.messages_rect.height as f64
+            / line_count as f64)
+            .max(1.0) as u16;
         let scrollable_height = app.messages_rect.height.saturating_sub(scrollbar_height);
-        let scrollbar_pos = ((start_line as f64 / max_scroll.max(1) as f64).min(1.0) * scrollable_height as f64) as u16;
+        let scrollbar_pos = ((start_line as f64 / max_scroll.max(1) as f64).min(1.0)
+            * scrollable_height as f64) as u16;
 
         let mut scrollbar_lines = Vec::new();
         for y_offset in 0..app.messages_rect.height {
             if y_offset >= scrollbar_pos && y_offset < scrollbar_pos + scrollbar_height {
-                scrollbar_lines.push(Line::from(Span::styled("█", Style::default().fg(Color::DarkGray))));
+                scrollbar_lines.push(Line::from(Span::styled(
+                    "█",
+                    Style::default().fg(Color::DarkGray),
+                )));
             } else {
                 scrollbar_lines.push(Line::from(Span::raw(" ")));
             }
@@ -158,8 +159,8 @@ fn draw_input(app: &App, frame: &mut Frame) {
         vertical: 1,
     });
 
-    let input = Paragraph::new(app.input.clone())
-        .style(Style::default().fg(Color::White).bg(Color::Black));
+    let input =
+        Paragraph::new(app.input.clone()).style(Style::default().fg(Color::White).bg(Color::Black));
     frame.render_widget(input, inner);
 
     if !app.loading {
@@ -230,7 +231,10 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
             left_spans.push(Span::raw(" "));
             let braille_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
             let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
-            left_spans.push(Span::styled(braille.to_string(), Style::default().fg(Color::DarkGray)));
+            left_spans.push(Span::styled(
+                braille.to_string(),
+                Style::default().fg(Color::DarkGray),
+            ));
         }
     }
 

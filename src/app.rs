@@ -1,10 +1,10 @@
-use crate::llm::{Message, LlmEvent};
+use crate::llm::{LlmEvent, Message};
 use crate::text::wrap_text;
+use indexmap::IndexMap;
+use ratatui::layout::Rect;
 use std::fs;
 use std::io;
 use std::sync::mpsc;
-use ratatui::layout::Rect;
-use indexmap::IndexMap;
 
 pub struct App {
     pub messages: Vec<Message>,
@@ -52,9 +52,7 @@ impl App {
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let available_modes: Vec<String> = modes_config.keys().cloned().collect();
-        let mode_color = modes_config
-            .get(&mode_name)
-            .and_then(|m| m.color.clone());
+        let mode_color = modes_config.get(&mode_name).and_then(|m| m.color.clone());
 
         Self {
             messages: Vec::new(),
@@ -153,7 +151,15 @@ impl App {
             .and_then(|m| m.system_prompt.clone());
 
         std::thread::spawn(move || {
-            crate::llm::call_llm(messages, tx, debug, &endpoint, max_tokens, temperature, system_prompt);
+            crate::llm::call_llm(
+                messages,
+                tx,
+                debug,
+                &endpoint,
+                max_tokens,
+                temperature,
+                system_prompt,
+            );
         });
     }
 
@@ -232,11 +238,15 @@ impl App {
             return;
         }
 
-        let scrollbar_height = (self.messages_rect.height as f64 * self.messages_rect.height as f64 / total_lines as f64).max(1.0) as u16;
+        let scrollbar_height = (self.messages_rect.height as f64 * self.messages_rect.height as f64
+            / total_lines as f64)
+            .max(1.0) as u16;
         let scrollable_height = self.messages_rect.height.saturating_sub(scrollbar_height);
         let scrollable_lines = total_lines.saturating_sub(self.messages_rect.height as usize);
 
-        let click_offset = mouse_y.saturating_sub(self.messages_rect.y).min(scrollable_height);
+        let click_offset = mouse_y
+            .saturating_sub(self.messages_rect.y)
+            .min(scrollable_height);
 
         if scrollable_height > 0 {
             let proportion = click_offset as f64 / scrollable_height as f64;
@@ -255,7 +265,8 @@ impl App {
 
     pub fn delete_char(&mut self) {
         if self.cursor_pos > 0 {
-            let byte_pos = self.input
+            let byte_pos = self
+                .input
                 .char_indices()
                 .filter(|(i, _)| *i < self.cursor_pos)
                 .last()
@@ -287,7 +298,8 @@ impl App {
 
     pub fn move_cursor_backward(&mut self) {
         if self.cursor_pos > 0 {
-            let byte_pos = self.input
+            let byte_pos = self
+                .input
                 .char_indices()
                 .filter(|(i, _)| *i < self.cursor_pos)
                 .last()
@@ -313,12 +325,14 @@ impl App {
             pos = pos.saturating_sub(1);
         }
 
-        let byte_pos = self.input
+        let byte_pos = self
+            .input
             .chars()
             .take(pos)
             .map(|c| c.len_utf8())
             .sum::<usize>();
-        let byte_end = self.input
+        let byte_end = self
+            .input
             .chars()
             .take(self.cursor_pos)
             .map(|c| c.len_utf8())
@@ -392,14 +406,12 @@ impl App {
             // Extract text and copy to clipboard
             if let Some(text) = self.extract_selected_text() {
                 match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => {
-                        match clipboard.set_text(text) {
-                            Ok(_) => {
-                                self.last_copy_frame = self.frame_count;
-                            }
-                            Err(e) => eprintln!("Failed to copy to clipboard: {}", e),
+                    Ok(mut clipboard) => match clipboard.set_text(text) {
+                        Ok(_) => {
+                            self.last_copy_frame = self.frame_count;
                         }
-                    }
+                        Err(e) => eprintln!("Failed to copy to clipboard: {}", e),
+                    },
                     Err(e) => eprintln!("Failed to access clipboard: {}", e),
                 }
             }

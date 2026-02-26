@@ -1,4 +1,4 @@
-use pulldown_cmark::{Parser as MdParser, Event as MdEvent, Tag};
+use pulldown_cmark::{Event as MdEvent, Parser as MdParser, Tag};
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
 
@@ -32,7 +32,10 @@ pub fn parse_markdown_line(text: &str) -> Vec<Span<'static>> {
                 spans.push(Span::styled(s, style));
             }
             MdEvent::Code(text) => {
-                spans.push(Span::styled(text.to_string(), Style::default().fg(Color::Cyan)));
+                spans.push(Span::styled(
+                    text.to_string(),
+                    Style::default().fg(Color::Cyan),
+                ));
             }
             MdEvent::SoftBreak | MdEvent::HardBreak => {
                 // Line breaks shouldn't happen in a single line

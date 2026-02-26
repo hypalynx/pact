@@ -9,7 +9,9 @@ mod utils;
 use app::App;
 use clap::Parser;
 use config::Config;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseEventKind, EnableMouseCapture, DisableMouseCapture};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseEventKind,
+};
 use crossterm::execute;
 use std::io::stdout;
 use std::time::Duration;
@@ -87,7 +89,10 @@ fn main() -> std::io::Result<()> {
                         app.scroll_offset = new_line_count.saturating_sub(height);
                     }
                 }
-                llm::LlmEvent::Usage { input_tokens, output_tokens } => {
+                llm::LlmEvent::Usage {
+                    input_tokens,
+                    output_tokens,
+                } => {
                     app.total_input_tokens += input_tokens;
                     app.total_output_tokens += output_tokens;
                 }
@@ -111,7 +116,9 @@ fn main() -> std::io::Result<()> {
                         continue;
                     }
                     match key.code {
-                        KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('c')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             if app.input.is_empty() {
                                 break;
                             } else {
@@ -120,25 +127,39 @@ fn main() -> std::io::Result<()> {
                                 app.history_index = None;
                             }
                         }
-                        KeyCode::Char('a') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('a')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.move_cursor_to_start();
                         }
-                        KeyCode::Char('e') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('e')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.move_cursor_to_end();
                         }
-                        KeyCode::Char('w') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('w')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.kill_word_backward();
                         }
-                        KeyCode::Char('u') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('u')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.kill_line();
                         }
-                        KeyCode::Char('f') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('f')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.move_cursor_forward();
                         }
-                        KeyCode::Char('b') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('b')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.move_cursor_backward();
                         }
-                        KeyCode::Char('j') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                        KeyCode::Char('j')
+                            if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
                             app.insert_char('\n');
                         }
                         KeyCode::Char(c) => app.insert_char(c),
@@ -169,11 +190,17 @@ fn main() -> std::io::Result<()> {
                         MouseEventKind::ScrollUp => app.scroll_up(),
                         MouseEventKind::ScrollDown => app.scroll_down(),
                         MouseEventKind::Down(_) => {
-                            let scrollbar_x = app.messages_rect.x + app.messages_rect.width.saturating_sub(1);
-                            if mouse.column == scrollbar_x && mouse.row >= app.messages_rect.y && mouse.row < app.messages_rect.y + app.messages_rect.height {
+                            let scrollbar_x =
+                                app.messages_rect.x + app.messages_rect.width.saturating_sub(1);
+                            if mouse.column == scrollbar_x
+                                && mouse.row >= app.messages_rect.y
+                                && mouse.row < app.messages_rect.y + app.messages_rect.height
+                            {
                                 app.handle_scrollbar_click(mouse.row);
                                 app.dragging_scrollbar = true;
-                            } else if mouse.row >= app.messages_rect.y && mouse.row < app.messages_rect.y + app.messages_rect.height {
+                            } else if mouse.row >= app.messages_rect.y
+                                && mouse.row < app.messages_rect.y + app.messages_rect.height
+                            {
                                 // Start selection in message area
                                 app.start_selection(mouse.column, mouse.row);
                             }

@@ -86,7 +86,10 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
                     .and_then(|id| id.as_str())
                     .unwrap_or("unknown")
                     .to_string();
-                let context_window = json.get("max_tokens").and_then(|m| m.as_u64()).unwrap_or(65535) as usize;
+                let context_window = json
+                    .get("max_tokens")
+                    .and_then(|m| m.as_u64())
+                    .unwrap_or(65535) as usize;
                 return ServerInfo {
                     model_name,
                     context_window,
