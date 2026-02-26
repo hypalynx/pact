@@ -191,35 +191,45 @@ fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {
 }
 
 fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
-    let pwd = get_pwd_display();
-    let git_branch = get_git_branch();
+    let mut left_spans = Vec::new();
 
-    let mut left_spans = vec![Span::styled(pwd, Style::default().fg(Color::DarkGray))];
-
-    if let Some(branch) = git_branch {
-        left_spans.push(Span::raw(" "));
+    // Show copy notification if recent, otherwise show normal status
+    if app.is_copying() {
         left_spans.push(Span::styled(
-            format!("[{}]", branch),
-            Style::default().fg(Color::DarkGray),
+            "Copied to clipboard!",
+            Style::default().fg(Color::Yellow),
         ));
-    }
+    } else {
+        let pwd = get_pwd_display();
+        let git_branch = get_git_branch();
 
-    left_spans.push(Span::raw(" "));
-    let mode_color = app
-        .mode_color
-        .as_ref()
-        .map(|c| parse_color(c))
-        .unwrap_or(Color::White);
-    left_spans.push(Span::styled(
-        app.mode_name.clone(),
-        Style::default().fg(mode_color),
-    ));
+        left_spans.push(Span::styled(pwd, Style::default().fg(Color::DarkGray)));
 
-    if app.loading {
+        if let Some(branch) = git_branch {
+            left_spans.push(Span::raw(" "));
+            left_spans.push(Span::styled(
+                format!("[{}]", branch),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
         left_spans.push(Span::raw(" "));
-        let braille_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-        let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
-        left_spans.push(Span::styled(braille.to_string(), Style::default().fg(Color::DarkGray)));
+        let mode_color = app
+            .mode_color
+            .as_ref()
+            .map(|c| parse_color(c))
+            .unwrap_or(Color::White);
+        left_spans.push(Span::styled(
+            app.mode_name.clone(),
+            Style::default().fg(mode_color),
+        ));
+
+        if app.loading {
+            left_spans.push(Span::raw(" "));
+            let braille_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+            let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
+            left_spans.push(Span::styled(braille.to_string(), Style::default().fg(Color::DarkGray)));
+        }
     }
 
     let tokens_used = app.total_input_tokens + app.total_output_tokens;

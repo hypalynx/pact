@@ -36,6 +36,9 @@ pub struct App {
     pub temperature: Option<f32>,
     pub mode_color: Option<String>,
     pub model_name: String,
+    pub selection_start: Option<(u16, u16)>,
+    pub selection_end: Option<(u16, u16)>,
+    pub last_copy_frame: u32,
 }
 
 impl App {
@@ -83,6 +86,9 @@ impl App {
             temperature,
             mode_color,
             model_name: String::new(),
+            selection_start: None,
+            selection_end: None,
+            last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
         }
     }
 
@@ -262,6 +268,29 @@ impl App {
         self.cursor_pos = self.input.len();
     }
 
+    pub fn move_cursor_forward(&mut self) {
+        if self.cursor_pos < self.input.len() {
+            let next_char = self.input[self.cursor_pos..]
+                .chars()
+                .next()
+                .map(|c| c.len_utf8())
+                .unwrap_or(1);
+            self.cursor_pos += next_char;
+        }
+    }
+
+    pub fn move_cursor_backward(&mut self) {
+        if self.cursor_pos > 0 {
+            let byte_pos = self.input
+                .char_indices()
+                .filter(|(i, _)| *i < self.cursor_pos)
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.cursor_pos = byte_pos;
+        }
+    }
+
     pub fn kill_word_backward(&mut self) {
         if self.cursor_pos == 0 {
             return;
@@ -334,5 +363,82 @@ impl App {
             self.context_window = server_info.context_window;
             self.last_server_check = self.frame_count;
         }
+    }
+
+    pub fn start_selection(&mut self, x: u16, y: u16) {
+        self.selection_start = Some((x, y));
+        self.selection_end = None;
+    }
+
+    pub fn extend_selection(&mut self, x: u16, y: u16) {
+        self.selection_end = Some((x, y));
+    }
+
+    pub fn finish_selection(&mut self) {
+        if let (Some(start), Some(end)) = (self.selection_start, self.selection_end) {
+            if start == end {
+                // Deselect if same position
+                self.selection_start = None;
+                self.selection_end = None;
+                return;
+            }
+
+            // Extract text and copy to clipboard
+            if let Some(text) = self.extract_selected_text() {
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => {
+                        match clipboard.set_text(text) {
+                            Ok(_) => {
+                                self.last_copy_frame = self.frame_count;
+                            }
+                            Err(e) => eprintln!("Failed to copy to clipboard: {}", e),
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to access clipboard: {}", e),
+                }
+            }
+            self.selection_start = None;
+            self.selection_end = None;
+        }
+    }
+
+    fn extract_selected_text(&self) -> Option<String> {
+        let (start, _end) = match (self.selection_start, self.selection_end) {
+            (Some(s), Some(e)) => {
+                if s <= e {
+                    (s, e)
+                } else {
+                    (e, s)
+                }
+            }
+            _ => return None,
+        };
+
+        // Simple extraction: collect all message text
+        let mut all_text = String::new();
+        for msg in &self.messages {
+            all_text.push_str(&msg.text);
+            all_text.push('\n');
+        }
+        if !self.pending_response.is_empty() {
+            all_text.push_str(&self.pending_response);
+        }
+
+        // Rough approximation: extract by line
+        // This is a simplified version - in reality we'd need to map screen coords to text
+        if all_text.len() > (start.0 as usize) {
+            Some(all_text)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_copying(&self) -> bool {
+        // Show notification for ~2 seconds (roughly 125 frames at 16ms)
+        // Don't show if we've never copied (last_copy_frame is u32::MAX)
+        if self.last_copy_frame == u32::MAX {
+            return false;
+        }
+        self.frame_count.saturating_sub(self.last_copy_frame) < 125
     }
 }

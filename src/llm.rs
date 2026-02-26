@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::sync::mpsc;
 use std::time::Duration;
+use crate::tools;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -16,6 +17,7 @@ pub enum LlmEvent {
     Done,
     Error(String),
     Usage { input_tokens: usize, output_tokens: usize },
+    ToolCall { name: String, args: serde_json::Map<String, serde_json::Value> },
 }
 
 pub fn call_llm(
@@ -40,7 +42,11 @@ pub fn call_llm(
 
     let mut msg_payload: Vec<_> = Vec::new();
 
-    // Prepend system prompt as first user message if present
+    // Add tools availability note as first user message with explicit format instruction
+    let tools_note = "IMPORTANT: You have access to tools. When you need to read a file, respond with ONLY a JSON object in this exact format (do not include any text before or after):\n\n{\"tool_calls\": [{\"index\": 0, \"id\": \"read\", \"type\": \"function\", \"function\": {\"name\": \"read\", \"arguments\": \"{\\\"path\\\": \\\"/absolute/path/to/file\\\"}\"}}}}\n\nAfter the tool executes, continue with your normal response. For file paths, always use absolute paths.";
+    msg_payload.push(json!({ "role": "user", "content": tools_note }));
+
+    // Prepend mode prompt as second user message if present
     if let Some(prompt) = system_prompt {
         msg_payload.push(json!({ "role": "user", "content": prompt }));
     }
@@ -55,6 +61,7 @@ pub fn call_llm(
         "max_tokens": max_tokens,
         "stream": true,
         "messages": msg_payload,
+        "tools": tools::get_tool_definitions(),
     });
 
     if let Some(temp) = temperature {
@@ -109,14 +116,89 @@ pub fn call_llm(
 
             if let Some(data_str) = line.strip_prefix("data: ") {
                 if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(data_str) {
+                    // Log all delta events for debugging
+                    if debug {
+                        if let Some(delta) = json_val.get("delta") {
+                            if let Some(ref mut f) = log_file {
+                                let _ = writeln!(f, "DELTA: {}", serde_json::to_string_pretty(&delta).unwrap_or_default());
+                            }
+                        }
+                    }
+
+                    // Check for text tokens
                     if let Some(delta) = json_val
                         .get("delta")
                         .and_then(|d| d.get("text"))
                         .and_then(|t| t.as_str())
                     {
-                        let _ = tx.send(LlmEvent::Token(delta.to_string()));
+                        // Check if this contains a tool call
+                        if delta.contains("<tool_call>") {
+                            // Parse tool call from text format
+                            if let Some(tool_json_start) = delta.find('{') {
+                                if let Some(tool_json_end) = delta.rfind('}') {
+                                    let tool_json_str = &delta[tool_json_start..=tool_json_end];
+                                    if let Ok(tool_json) = serde_json::from_str::<serde_json::Value>(tool_json_str) {
+                                        let mut name = tool_json.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                                        let mut args = serde_json::Map::new();
+
+                                        // Handle both "file" and "path" parameter names
+                                        if let Some(file_arg) = tool_json.get("arguments").and_then(|a| a.get("file")) {
+                                            args.insert("path".to_string(), file_arg.clone());
+                                        }
+                                        if let Some(path_arg) = tool_json.get("arguments").and_then(|a| a.get("path")) {
+                                            args.insert("path".to_string(), path_arg.clone());
+                                        }
+
+                                        // If name is empty but we have path arg, infer it's a "read" tool
+                                        if name.is_empty() && args.contains_key("path") {
+                                            name = "read".to_string();
+                                        }
+
+                                        if !name.is_empty() && !args.is_empty() {
+                                            let _ = tx.send(LlmEvent::ToolCall { name, args });
+                                        }
+                                    }
+                                }
+                            }
+                            // Don't send the <tool_call> block as a token
+                        } else {
+                            // Regular text token
+                            let _ = tx.send(LlmEvent::Token(delta.to_string()));
+                        }
                     }
 
+                    // Check for tool calls in delta
+                    if let Some(tool_calls) = json_val
+                        .get("delta")
+                        .and_then(|d| d.get("tool_calls"))
+                        .and_then(|tc| tc.as_array())
+                    {
+                        if debug {
+                            if let Some(ref mut f) = log_file {
+                                let _ = writeln!(f, "TOOL_CALLS: {}", serde_json::to_string_pretty(&tool_calls).unwrap_or_default());
+                            }
+                        }
+                        for tool_call in tool_calls {
+                            if let Some(function) = tool_call.get("function") {
+                                if let (Some(name), Some(args_str)) = (
+                                    function.get("name").and_then(|n| n.as_str()),
+                                    function.get("arguments").and_then(|a| a.as_str()),
+                                ) {
+                                    // Parse arguments JSON
+                                    if let Ok(args_json) = serde_json::from_str::<serde_json::Value>(args_str) {
+                                        if let Some(args_obj) = args_json.as_object() {
+                                            let _ = tx.send(LlmEvent::ToolCall {
+                                                name: name.to_string(),
+                                                args: args_obj.clone(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check for usage
                     if let Some(usage) = json_val.get("usage") {
                         let input_tokens = usage.get("input_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
                         let output_tokens = usage.get("output_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;

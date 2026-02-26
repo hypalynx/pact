@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod llm;
 mod text;
+mod tools;
 mod ui;
 mod utils;
 
@@ -88,6 +89,14 @@ fn main() -> std::io::Result<()> {
                     app.total_input_tokens += input_tokens;
                     app.total_output_tokens += output_tokens;
                 }
+                llm::LlmEvent::ToolCall { name, args } => {
+                    let tool_call = tools::ToolCall { name, args };
+                    let result = tools::execute_tool(&tool_call);
+                    app.messages.push(llm::Message {
+                        role: "user".to_string(),
+                        text: format!("Tool result: {}", result),
+                    });
+                }
             }
         }
 
@@ -119,12 +128,24 @@ fn main() -> std::io::Result<()> {
                         KeyCode::Char('u') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                             app.kill_line();
                         }
+                        KeyCode::Char('f') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.move_cursor_forward();
+                        }
+                        KeyCode::Char('b') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.move_cursor_backward();
+                        }
                         KeyCode::Char('j') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                             app.insert_char('\n');
                         }
                         KeyCode::Char(c) => app.insert_char(c),
                         KeyCode::Backspace => {
                             app.delete_char();
+                        }
+                        KeyCode::Left => {
+                            app.move_cursor_backward();
+                        }
+                        KeyCode::Right => {
+                            app.move_cursor_forward();
                         }
                         KeyCode::Enter => {
                             app.submit_message();
@@ -148,13 +169,23 @@ fn main() -> std::io::Result<()> {
                             if mouse.column == scrollbar_x && mouse.row >= app.messages_rect.y && mouse.row < app.messages_rect.y + app.messages_rect.height {
                                 app.handle_scrollbar_click(mouse.row);
                                 app.dragging_scrollbar = true;
+                            } else if mouse.row >= app.messages_rect.y && mouse.row < app.messages_rect.y + app.messages_rect.height {
+                                // Start selection in message area
+                                app.start_selection(mouse.column, mouse.row);
                             }
                         }
                         MouseEventKind::Drag(_) if app.dragging_scrollbar => {
                             app.handle_scrollbar_click(mouse.row);
                         }
+                        MouseEventKind::Drag(_) => {
+                            // Extend selection
+                            if app.selection_start.is_some() {
+                                app.extend_selection(mouse.column, mouse.row);
+                            }
+                        }
                         MouseEventKind::Up(_) => {
                             app.dragging_scrollbar = false;
+                            app.finish_selection();
                         }
                         _ => {}
                     }

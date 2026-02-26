@@ -124,6 +124,101 @@ This document outlines the testing strategy for Pact TUI as the codebase grows. 
 - Create test configs with various combinations
 - Pre-made message histories for testing
 
+## Tool Use Implementation
+
+### Overview
+Add OpenAI-compatible tool/function calling to Pact. LLM can request tools like read, edit, bash to interact with the filesystem and system. Results are sent back to the LLM in the conversation.
+
+### Tools to Implement (Priority Order)
+
+1. **read** (NEXT)
+   - Read file contents at given path
+   - Return file contents or error message
+   - Max size limit? (e.g., 64KB per read to avoid huge responses)
+
+2. **bash** (AFTER read)
+   - Execute shell commands
+   - Capture stdout/stderr
+   - Return exit code + output
+   - Security: Consider sandboxing/restrictions
+
+3. **edit**
+   - Modify file at path (similar to our Edit tool)
+   - Line-based or full replacement
+
+4. **glob**
+   - Find files matching pattern
+   - Return list of paths
+
+5. **grep**
+   - Search file contents for patterns
+   - Return matching lines with context
+
+6. **todowrite**
+   - Create/update todo items
+   - Store in standard location
+
+### Tool Schema Format (OpenAI-compatible)
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "read",
+    "description": "Read contents of a file",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute file path to read"
+        }
+      },
+      "required": ["path"]
+    }
+  }
+}
+```
+
+### Implementation Plan
+
+1. **New module: `tools.rs`**
+   - Define tool schemas
+   - Implement tool execution functions
+   - Handle tool responses
+
+2. **Update `llm.rs`**
+   - Include tools array in request
+   - Parse `tool_use` / `function_call` responses
+   - Return tool calls to main loop instead of just tokens
+
+3. **Update `app.rs` / event loop**
+   - Handle tool call responses
+   - Execute tools synchronously (for now)
+   - Send tool results back to LLM as assistant message
+   - Continue conversation
+
+4. **New LlmEvent variant**
+   - `ToolCall { name, args }` - LLM wants to use a tool
+   - Display in UI or execute immediately?
+
+### Response Flow
+
+1. User sends message
+2. LLM responds with potential tool calls
+3. App executes tool, gets result
+4. App sends tool result back to LLM as new message
+5. LLM continues with tool result context
+6. Process repeats until LLM stops calling tools
+
+### Considerations
+
+- **Sync vs Async**: Tool execution blocks? Or spawn threads?
+- **Security**: What paths can be read? Sandboxing?
+- **UI**: How to show tool execution to user? Transparent or explicit?
+- **Error handling**: What if tool fails? Send error to LLM?
+- **Large responses**: Truncate huge file reads?
+
 ## Known Gaps
 
 - No tests for UI rendering (ratatui widgets are hard to test)
