@@ -225,3 +225,26 @@ Add OpenAI-compatible tool/function calling to Pact. LLM can request tools like 
 - No performance tests (token accumulation speed, large message counts)
 - No stress tests (very long input, many modes, rapid mode switching)
 - Display rendering tested manually
+
+## Upcoming Work
+
+### 1. Analyze opencode + mitmproxy
+- Run opencode with mitmproxy intercepting traffic to local LLM
+- Understand tool use patterns with Qwen model
+- Inform better understanding of tool invocation protocol
+
+### 2. Implement slash commands (/clear, etc.)
+- Add support for `/clear` to clear conversation context
+- Parse slash commands from user input before sending to LLM
+- Foundation for adding more commands later
+
+### 3. Implement @ file reference autocomplete
+- Type `@` to trigger file autocomplete suggestions
+- Display matched file paths in cyan (highlighted) in input
+- Pass absolute file path to LLM when submitting
+- Similar to GitHub/other tools' @ mention syntax
+
+### 4. Extend tool support (glob, grep)
+- Add `glob` tool for file pattern matching
+- Add `grep` tool (use ripgrep if available, fallback to standard grep)
+- Expand LLM's ability to search and explore codebase
