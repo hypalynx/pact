@@ -10,6 +10,8 @@ use crate::tools;
 pub struct Message {
     pub role: String,
     pub text: String,
+    #[serde(default)]
+    pub is_tool_result: bool,
 }
 
 pub enum LlmEvent {
@@ -43,7 +45,7 @@ pub fn call_llm(
     let mut msg_payload: Vec<_> = Vec::new();
 
     // Add tools availability note as first user message with explicit format instruction
-    let tools_note = "IMPORTANT: You have access to tools. When you need to read a file, respond with ONLY a JSON object in this exact format (do not include any text before or after):\n\n{\"tool_calls\": [{\"index\": 0, \"id\": \"read\", \"type\": \"function\", \"function\": {\"name\": \"read\", \"arguments\": \"{\\\"path\\\": \\\"/absolute/path/to/file\\\"}\"}}}}\n\nAfter the tool executes, continue with your normal response. For file paths, always use absolute paths.";
+    let tools_note = "You have access to a 'read' tool to examine files. When you need to read a file, output ONLY this JSON (no other text):\n\n{\"tool_calls\": [{\"index\": 0, \"id\": \"read\", \"type\": \"function\", \"function\": {\"name\": \"read\", \"arguments\": \"{\\\"path\\\": \\\"/absolute/path/to/file\\\"}\"}}}}\n\nOnce you receive the file contents, respond normally with your analysis or findings. For file paths, always use absolute paths.";
     msg_payload.push(json!({ "role": "user", "content": tools_note }));
 
     // Prepend mode prompt as second user message if present

@@ -107,10 +107,11 @@ impl App {
         let messages: Vec<Message> = self
             .messages
             .iter()
-            .filter(|m| m.role == "user")
+            .filter(|m| m.role == "user" && !m.is_tool_result)
             .map(|m| Message {
                 role: m.role.clone(),
                 text: m.text.clone(),
+                is_tool_result: false,
             })
             .collect();
         let content = serde_json::to_string_pretty(&messages)?;
@@ -126,11 +127,16 @@ impl App {
         self.messages.push(Message {
             role: "user".to_string(),
             text: text.clone(),
+            is_tool_result: false,
         });
         self.history_index = None;
         self.save_history().ok();
         self.input = String::new();
         self.cursor_pos = 0;
+        self.send_to_llm();
+    }
+
+    pub fn send_to_llm(&mut self) {
         self.loading = true;
         self.pending_response.clear();
         self.user_scrolled = false;

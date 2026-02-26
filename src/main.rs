@@ -64,6 +64,7 @@ fn main() -> std::io::Result<()> {
                     app.messages.push(llm::Message {
                         role: "assistant".to_string(),
                         text,
+                        is_tool_result: false,
                     });
                     app.loading = false;
                     if !app.user_scrolled {
@@ -77,6 +78,7 @@ fn main() -> std::io::Result<()> {
                     app.messages.push(llm::Message {
                         role: "assistant".to_string(),
                         text,
+                        is_tool_result: false,
                     });
                     app.loading = false;
                     if !app.user_scrolled {
@@ -94,8 +96,10 @@ fn main() -> std::io::Result<()> {
                     let result = tools::execute_tool(&tool_call);
                     app.messages.push(llm::Message {
                         role: "user".to_string(),
-                        text: format!("Tool result: {}", result),
+                        text: result,
+                        is_tool_result: true,
                     });
+                    app.send_to_llm();
                 }
             }
         }

@@ -64,12 +64,14 @@ fn draw_messages(app: &App, frame: &mut Frame) {
             let wrapped = wrap_text(&msg.text, available_width);
             for line_text in wrapped {
                 let padded = format!("  {}  ", line_text);
+                let style = if msg.is_tool_result {
+                    Style::default().fg(Color::DarkGray)
+                } else {
+                    Style::default().bg(Color::Black)
+                };
                 lines.push(Line::from(
                     vec![
-                        Span::styled(
-                            padded,
-                            Style::default().bg(Color::Black),
-                        )
+                        Span::styled(padded, style)
                     ]
                 ));
             }
