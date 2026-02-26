@@ -28,7 +28,7 @@ pub fn get_pwd_display() -> String {
 
 pub fn get_git_branch() -> Option<String> {
     std::process::Command::new("git")
-        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()
         .and_then(|output| {
@@ -58,44 +58,43 @@ pub struct ServerInfo {
 pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
     let client = reqwest::blocking::Client::new();
 
-    if let Ok(response) = client.get(&format!("{}/v1/models", endpoint)).send() {
-        if let Ok(text) = response.text() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                // Try data array format
-                if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
-                    if let Some(first_model) = data.first() {
-                        let model_name = first_model
-                            .get("id")
-                            .and_then(|id| id.as_str())
-                            .unwrap_or("unknown")
-                            .to_string();
-                        let context_window = first_model
-                            .get("max_tokens")
-                            .and_then(|m| m.as_u64())
-                            .unwrap_or(65535) as usize;
-                        return ServerInfo {
-                            model_name,
-                            context_window,
-                        };
-                    }
-                }
-
-                // Try single model response format
-                let model_name = json
-                    .get("id")
-                    .and_then(|id| id.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                let context_window = json
-                    .get("max_tokens")
-                    .and_then(|m| m.as_u64())
-                    .unwrap_or(65535) as usize;
-                return ServerInfo {
-                    model_name,
-                    context_window,
-                };
-            }
+    if let Ok(response) = client.get(format!("{}/v1/models", endpoint)).send()
+        && let Ok(text) = response.text()
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+    {
+        // Try data array format
+        if let Some(data) = json.get("data").and_then(|d| d.as_array())
+            && let Some(first_model) = data.first()
+        {
+            let model_name = first_model
+                .get("id")
+                .and_then(|id| id.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let context_window = first_model
+                .get("max_tokens")
+                .and_then(|m| m.as_u64())
+                .unwrap_or(65535) as usize;
+            return ServerInfo {
+                model_name,
+                context_window,
+            };
         }
+
+        // Try single model response format
+        let model_name = json
+            .get("id")
+            .and_then(|id| id.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let context_window = json
+            .get("max_tokens")
+            .and_then(|m| m.as_u64())
+            .unwrap_or(65535) as usize;
+        return ServerInfo {
+            model_name,
+            context_window,
+        };
     }
 
     ServerInfo {

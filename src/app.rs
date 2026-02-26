@@ -269,7 +269,7 @@ impl App {
                 .input
                 .char_indices()
                 .filter(|(i, _)| *i < self.cursor_pos)
-                .last()
+                .next_back()
                 .map(|(i, _)| i)
                 .unwrap_or(0);
             self.input.remove(byte_pos);
@@ -302,7 +302,7 @@ impl App {
                 .input
                 .char_indices()
                 .filter(|(i, _)| *i < self.cursor_pos)
-                .last()
+                .next_back()
                 .map(|(i, _)| i)
                 .unwrap_or(0);
             self.cursor_pos = byte_pos;

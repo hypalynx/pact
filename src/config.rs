@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub api: ApiConfig,
@@ -20,7 +20,7 @@ pub struct ApiConfig {
     pub api_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Mode {
     pub system_prompt: Option<String>,
     pub temperature: Option<f32>,
@@ -47,16 +47,6 @@ fn default_mode() -> String {
     "build".to_string()
 }
 
-impl Default for Mode {
-    fn default() -> Self {
-        Self {
-            system_prompt: None,
-            temperature: None,
-            color: None,
-        }
-    }
-}
-
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
@@ -72,15 +62,6 @@ impl Default for UiConfig {
         Self {
             default_mode: default_mode(),
             modes: IndexMap::new(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            api: ApiConfig::default(),
-            ui: UiConfig::default(),
         }
     }
 }
