@@ -3,7 +3,8 @@
 run:
 	cargo run -- --debug
 
-test: fmt
+test: lint
+	cargo test
 
 lint:
 	cargo fmt --check
@@ -11,4 +12,4 @@ lint:
 
 lint-fix:
 	cargo fmt
-	cargo clippy --fix
+	cargo clippy --fix --allow-dirty
