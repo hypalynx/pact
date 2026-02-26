@@ -52,6 +52,9 @@ struct App {
     pending_response: String,
     debug: bool,
     scroll_offset: usize,
+    user_scrolled: bool,
+    was_at_bottom: bool,
+    dragging_scrollbar: bool,
 }
 
 impl App {
@@ -71,6 +74,9 @@ impl App {
             pending_response: String::new(),
             debug,
             scroll_offset: 0,
+            user_scrolled: false,
+            was_at_bottom: true,
+            dragging_scrollbar: false,
         }
     }
 
@@ -123,6 +129,8 @@ impl App {
         self.cursor_pos = 0;
         self.loading = true;
         self.pending_response.clear();
+        // Reset user_scrolled so the response auto-scrolls to the bottom
+        self.user_scrolled = false;
 
         let messages = self.messages.clone();
         let tx = self.tx.clone();
@@ -163,12 +171,73 @@ impl App {
         self.cursor_pos = self.input.len();
     }
 
+    fn calculate_total_lines(&self) -> usize {
+        // Calculate total line count from all messages
+        let mut total_lines = 0;
+        let available_width = (self.messages_rect.width.saturating_sub(4)) as usize;
+
+        for msg in &self.messages {
+            let wrapped = wrap_text(&msg.text, available_width);
+            total_lines += wrapped.len() + 1; // +1 for blank line
+        }
+
+        if !self.pending_response.is_empty() {
+            let wrapped = wrap_text(&self.pending_response, available_width);
+            total_lines += wrapped.len();
+        }
+
+        total_lines
+    }
+
     fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_add(3);
+        // Scrolling up shows earlier content (decrease absolute line number)
+        self.scroll_offset = self.scroll_offset.saturating_sub(3);
+        self.user_scrolled = true;
     }
 
     fn scroll_down(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(3);
+        let total_lines = self.calculate_total_lines();
+        let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
+        // Scrolling down shows later content (increase absolute line number)
+        self.scroll_offset = (self.scroll_offset + 3).min(max_scroll);
+        // If we're at the bottom, user is no longer manually scrolled
+        if self.scroll_offset >= max_scroll {
+            self.user_scrolled = false;
+        }
+    }
+
+    fn calculate_scroll_info(&self) -> (bool, usize) {
+        let total_lines = self.calculate_total_lines();
+        let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
+        let at_bottom = self.scroll_offset >= max_scroll;
+
+        (at_bottom, total_lines)
+    }
+
+    fn handle_scrollbar_click(&mut self, mouse_y: u16) {
+        let (_at_bottom, total_lines) = self.calculate_scroll_info();
+        if total_lines as u16 <= self.messages_rect.height {
+            return;
+        }
+
+        // scrollbar_height is the visual height of the thumb
+        let scrollbar_height = (self.messages_rect.height as f64 * self.messages_rect.height as f64 / total_lines as f64).max(1.0) as u16;
+        let scrollable_height = self.messages_rect.height.saturating_sub(scrollbar_height);
+        let scrollable_lines = total_lines.saturating_sub(self.messages_rect.height as usize);
+
+        // Where in the scrollbar (relative to messages_rect.y) did the user click?
+        let click_offset = mouse_y.saturating_sub(self.messages_rect.y).min(scrollable_height);
+
+        // Map to scroll offset (absolute line number to start from)
+        if scrollable_height > 0 {
+            let proportion = click_offset as f64 / scrollable_height as f64;
+            // Clicking at bottom (proportion=1) should show the last page
+            self.scroll_offset = (proportion * scrollable_lines as f64) as usize;
+        } else {
+            self.scroll_offset = 0;
+        }
+
+        self.user_scrolled = true;
     }
 
     fn insert_char(&mut self, c: char) {
@@ -229,6 +298,18 @@ impl App {
 
         self.input.drain(byte_pos..byte_end);
         self.cursor_pos = pos;
+    }
+
+    fn kill_line(&mut self) {
+        // Clear from start of current line to cursor
+        // Find the start of the current line (last newline before cursor, or start of input)
+        let line_start = self.input[..self.cursor_pos]
+            .rfind('\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
+
+        self.input.drain(line_start..self.cursor_pos);
+        self.cursor_pos = line_start;
     }
 }
 
@@ -413,10 +494,18 @@ fn main() -> io::Result<()> {
     loop {
         terminal.draw(|f| app.draw(f))?;
 
-        // Check for LLM events
+        // Process LLM events
         while let Ok(event) = app.rx.try_recv() {
             match event {
-                LlmEvent::Token(t) => app.pending_response.push_str(&t),
+                LlmEvent::Token(t) => {
+                    app.pending_response.push_str(&t);
+                    // Only auto-scroll if user hasn't manually scrolled
+                    if !app.user_scrolled {
+                        let new_line_count = app.calculate_total_lines();
+                        let height = app.messages_rect.height as usize;
+                        app.scroll_offset = new_line_count.saturating_sub(height);
+                    }
+                }
                 LlmEvent::Done => {
                     let text = std::mem::take(&mut app.pending_response);
                     app.messages.push(Message {
@@ -424,6 +513,12 @@ fn main() -> io::Result<()> {
                         text,
                     });
                     app.loading = false;
+                    // Only auto-scroll if user hasn't manually scrolled
+                    if !app.user_scrolled {
+                        let new_line_count = app.calculate_total_lines();
+                        let height = app.messages_rect.height as usize;
+                        app.scroll_offset = new_line_count.saturating_sub(height);
+                    }
                 }
                 LlmEvent::Error(e) => {
                     let text = format!("Error: {}", e);
@@ -432,6 +527,12 @@ fn main() -> io::Result<()> {
                         text,
                     });
                     app.loading = false;
+                    // Only auto-scroll if user hasn't manually scrolled
+                    if !app.user_scrolled {
+                        let new_line_count = app.calculate_total_lines();
+                        let height = app.messages_rect.height as usize;
+                        app.scroll_offset = new_line_count.saturating_sub(height);
+                    }
                 }
             }
         }
@@ -461,6 +562,9 @@ fn main() -> io::Result<()> {
                         KeyCode::Char('w') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                             app.kill_word_backward();
                         }
+                        KeyCode::Char('u') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.kill_line();
+                        }
                         KeyCode::Char('j') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
                             app.insert_char('\n');
                         }
@@ -480,6 +584,20 @@ fn main() -> io::Result<()> {
                     match mouse.kind {
                         MouseEventKind::ScrollUp => app.scroll_up(),
                         MouseEventKind::ScrollDown => app.scroll_down(),
+                        MouseEventKind::Down(_) => {
+                            // Check if click is on the scrollbar (right edge of messages area)
+                            let scrollbar_x = app.messages_rect.x + app.messages_rect.width.saturating_sub(1);
+                            if mouse.column == scrollbar_x && mouse.row >= app.messages_rect.y && mouse.row < app.messages_rect.y + app.messages_rect.height {
+                                app.handle_scrollbar_click(mouse.row);
+                                app.dragging_scrollbar = true;
+                            }
+                        }
+                        MouseEventKind::Drag(_) if app.dragging_scrollbar => {
+                            app.handle_scrollbar_click(mouse.row);
+                        }
+                        MouseEventKind::Up(_) => {
+                            app.dragging_scrollbar = false;
+                        }
                         _ => {}
                     }
                 }
@@ -514,6 +632,10 @@ impl App {
 
         self.messages_rect = messages_area;
         self.input_rect = input_area;
+
+        // Calculate if we're at the bottom before drawing
+        let (at_bottom, _) = self.calculate_scroll_info();
+        self.was_at_bottom = at_bottom;
 
         self.draw_messages(frame);
         self.draw_input(frame);
@@ -559,13 +681,10 @@ impl App {
         }
 
         let line_count = lines.len() as u16;
-        let scroll = self.scroll_offset as u16;
+        let max_scroll = line_count.saturating_sub(self.messages_rect.height);
 
-        let start_line = if scroll < line_count {
-            (line_count - scroll).saturating_sub(self.messages_rect.height).min(line_count)
-        } else {
-            0
-        };
+        // scroll_offset is absolute line number to start from, clamp to valid range
+        let start_line = (self.scroll_offset as u16).min(max_scroll);
 
         let visible_lines: Vec<Line> = lines
             .into_iter()
@@ -573,7 +692,53 @@ impl App {
             .take(self.messages_rect.height as usize)
             .collect();
 
+        // Draw messages
         frame.render_widget(Paragraph::new(visible_lines), self.messages_rect);
+
+        // Draw position indicator [current/total] only if not at the bottom
+        let at_bottom = start_line >= max_scroll;
+        if !at_bottom {
+            let current_line = start_line.saturating_add(1);
+            let position_text = format!("[{}/{}]", current_line, line_count);
+            let pos_width = position_text.len() as u16;
+            if pos_width < self.messages_rect.width {
+                let pos_x = self.messages_rect.x + self.messages_rect.width.saturating_sub(pos_width + 1);
+                let pos_area = Rect {
+                    x: pos_x,
+                    y: self.messages_rect.y,
+                    width: pos_width,
+                    height: 1,
+                };
+                frame.render_widget(
+                    Paragraph::new(position_text).style(Style::default().fg(Color::DarkGray)),
+                    pos_area,
+                );
+            }
+        }
+
+        // Draw scrollbar on the right side
+        if line_count > self.messages_rect.height {
+            let scrollbar_height = (self.messages_rect.height as f64 * self.messages_rect.height as f64 / line_count as f64).max(1.0) as u16;
+            let scrollable_height = self.messages_rect.height.saturating_sub(scrollbar_height);
+            let scrollbar_pos = ((start_line as f64 / max_scroll.max(1) as f64).min(1.0) * scrollable_height as f64) as u16;
+
+            let mut scrollbar_lines = Vec::new();
+            for y_offset in 0..self.messages_rect.height {
+                if y_offset >= scrollbar_pos && y_offset < scrollbar_pos + scrollbar_height {
+                    scrollbar_lines.push(Line::from(Span::styled("█", Style::default().fg(Color::DarkGray))));
+                } else {
+                    scrollbar_lines.push(Line::from(Span::raw(" ")));
+                }
+            }
+
+            let scrollbar_area = Rect {
+                x: self.messages_rect.x + self.messages_rect.width.saturating_sub(1),
+                y: self.messages_rect.y,
+                width: 1,
+                height: self.messages_rect.height,
+            };
+            frame.render_widget(Paragraph::new(scrollbar_lines), scrollbar_area);
+        }
     }
 
     fn draw_input(&self, frame: &mut Frame) {
