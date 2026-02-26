@@ -1,5 +1,8 @@
 .PHONY: test
 
+run:
+	cargo run -- --debug
+
 test: fmt
 
 fmt:
