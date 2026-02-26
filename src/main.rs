@@ -66,6 +66,7 @@ struct App {
     context_window: usize,
     total_input_tokens: usize,
     total_output_tokens: usize,
+    frame_count: u32,
 }
 
 impl App {
@@ -92,6 +93,7 @@ impl App {
             context_window: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            frame_count: 0,
         }
     }
 
@@ -725,6 +727,9 @@ fn main() -> io::Result<()> {
                 _ => {}
             }
         }
+
+        // Increment frame counter for animations
+        app.frame_count = app.frame_count.wrapping_add(1);
     }
 
     // Disable mouse support on exit
@@ -874,13 +879,7 @@ impl App {
             vertical: 1,
         });
 
-        let input_text = if self.loading {
-            "thinking...".to_string()
-        } else {
-            self.input.clone()
-        };
-
-        let input = Paragraph::new(input_text)
+        let input = Paragraph::new(self.input.clone())
             .style(Style::default().fg(Color::White).bg(Color::Black));
         frame.render_widget(input, inner);
 
@@ -939,6 +938,15 @@ impl App {
             Mode::Plan => "plan",
         };
         left_spans.push(Span::styled(mode_text, Style::default().fg(mode_color)));
+
+        // Add braille spinner only when loading
+        if self.loading {
+            left_spans.push(Span::raw(" "));
+            let braille_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+            // Slow down animation: each frame shows for ~3 iterations (48ms per frame)
+            let braille = braille_frames[((self.frame_count / 3) as usize) % braille_frames.len()];
+            left_spans.push(Span::styled(braille.to_string(), Style::default().fg(Color::DarkGray)));
+        }
 
         // Calculate token usage (using actual tracked tokens)
         let tokens_used = self.total_input_tokens + self.total_output_tokens;
