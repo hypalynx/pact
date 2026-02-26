@@ -1,0 +1,236 @@
+use crate::app::App;
+use crate::text::{parse_markdown_line, wrap_text};
+use crate::utils::{get_pwd_display, get_git_branch, format_tokens};
+use ratatui::Frame;
+use ratatui::{
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
+
+pub fn draw_app(app: &mut App, frame: &mut Frame) {
+    let margin = ratatui::layout::Margin::new(1, 1);
+    let area = frame.area().inner(margin);
+
+    let input_lines = (app.input.lines().count()
+        + if app.input.ends_with('\n') { 1 } else { 0 })
+    .max(1) as u16;
+    let input_height = (input_lines + 2).min(10).max(3);
+
+    let vertical = Layout::vertical([
+        Constraint::Min(3),
+        Constraint::Length(1),
+        Constraint::Length(input_height),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ]);
+
+    let [messages_area, _gap1, input_area, _gap2, status_area] = vertical.areas(area);
+
+    app.messages_rect = messages_area;
+    app.input_rect = input_area;
+
+    let (at_bottom, _) = app.calculate_scroll_info();
+    app.was_at_bottom = at_bottom;
+
+    draw_messages(app, frame);
+    draw_input(app, frame);
+    draw_status(app, frame, status_area);
+}
+
+fn draw_messages(app: &App, frame: &mut Frame) {
+    let mut lines = Vec::new();
+    let available_width = (app.messages_rect.width.saturating_sub(4)) as usize;
+
+    for msg in &app.messages {
+        if msg.role == "user" {
+            let wrapped = wrap_text(&msg.text, available_width);
+            for line_text in wrapped {
+                let padded = format!("  {}  ", line_text);
+                lines.push(Line::from(
+                    vec![
+                        Span::styled(
+                            padded,
+                            Style::default().bg(Color::Black),
+                        )
+                    ]
+                ));
+            }
+        } else {
+            let wrapped = wrap_text(&msg.text, available_width);
+            for line_text in wrapped {
+                let spans = parse_markdown_line(&line_text);
+                lines.push(Line::from(spans));
+            }
+        }
+        lines.push(Line::from(""));
+    }
+
+    if !app.pending_response.is_empty() {
+        let wrapped = wrap_text(&app.pending_response, available_width);
+        for line_text in wrapped {
+            let spans = parse_markdown_line(&line_text);
+            lines.push(Line::from(spans));
+        }
+    }
+
+    let line_count = lines.len() as u16;
+    let max_scroll = line_count.saturating_sub(app.messages_rect.height);
+    let start_line = (app.scroll_offset as u16).min(max_scroll);
+
+    let visible_lines: Vec<Line> = lines
+        .into_iter()
+        .skip(start_line as usize)
+        .take(app.messages_rect.height as usize)
+        .collect();
+
+    frame.render_widget(Paragraph::new(visible_lines), app.messages_rect);
+
+    let at_bottom = start_line >= max_scroll;
+    if !at_bottom {
+        let current_line = start_line.saturating_add(1);
+        let position_text = format!("[{}/{}]", current_line, line_count);
+        let pos_width = position_text.len() as u16;
+        if pos_width < app.messages_rect.width {
+            let pos_x = app.messages_rect.x + app.messages_rect.width.saturating_sub(pos_width + 1);
+            let pos_area = Rect {
+                x: pos_x,
+                y: app.messages_rect.y,
+                width: pos_width,
+                height: 1,
+            };
+            frame.render_widget(
+                Paragraph::new(position_text).style(Style::default().fg(Color::DarkGray)),
+                pos_area,
+            );
+        }
+    }
+
+    if line_count > app.messages_rect.height {
+        let scrollbar_height = (app.messages_rect.height as f64 * app.messages_rect.height as f64 / line_count as f64).max(1.0) as u16;
+        let scrollable_height = app.messages_rect.height.saturating_sub(scrollbar_height);
+        let scrollbar_pos = ((start_line as f64 / max_scroll.max(1) as f64).min(1.0) * scrollable_height as f64) as u16;
+
+        let mut scrollbar_lines = Vec::new();
+        for y_offset in 0..app.messages_rect.height {
+            if y_offset >= scrollbar_pos && y_offset < scrollbar_pos + scrollbar_height {
+                scrollbar_lines.push(Line::from(Span::styled("█", Style::default().fg(Color::DarkGray))));
+            } else {
+                scrollbar_lines.push(Line::from(Span::raw(" ")));
+            }
+        }
+
+        let scrollbar_area = Rect {
+            x: app.messages_rect.x + app.messages_rect.width.saturating_sub(1),
+            y: app.messages_rect.y,
+            width: 1,
+            height: app.messages_rect.height,
+        };
+        frame.render_widget(Paragraph::new(scrollbar_lines), scrollbar_area);
+    }
+}
+
+fn draw_input(app: &App, frame: &mut Frame) {
+    let margin = Paragraph::new("").style(Style::default().bg(Color::Black));
+    frame.render_widget(margin, app.input_rect);
+
+    let inner = app.input_rect.inner(ratatui::layout::Margin {
+        horizontal: 3,
+        vertical: 1,
+    });
+
+    let input = Paragraph::new(app.input.clone())
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+    frame.render_widget(input, inner);
+
+    if !app.loading {
+        let (cursor_x, cursor_y) = cursor_position(&app.input, app.cursor_pos);
+        let cursor_pos = ratatui::layout::Position {
+            x: inner.x + cursor_x as u16,
+            y: inner.y + cursor_y as u16,
+        };
+        frame.set_cursor_position(cursor_pos);
+    }
+}
+
+fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {
+    let mut x = 0;
+    let mut y = 0;
+    let mut byte_count = 0;
+
+    for c in input.chars() {
+        if byte_count >= cursor_pos {
+            break;
+        }
+        if c == '\n' {
+            y += 1;
+            x = 0;
+        } else {
+            x += 1;
+        }
+        byte_count += c.len_utf8();
+    }
+    (x, y)
+}
+
+fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
+    let pwd = get_pwd_display();
+    let git_branch = get_git_branch();
+
+    let mut left_spans = vec![Span::styled(pwd, Style::default().fg(Color::DarkGray))];
+
+    if let Some(branch) = git_branch {
+        left_spans.push(Span::raw(" "));
+        left_spans.push(Span::styled(
+            format!("[{}]", branch),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+
+    left_spans.push(Span::raw(" "));
+    let mode_color = match app.mode {
+        crate::app::Mode::Build => Color::Cyan,
+        crate::app::Mode::Plan => Color::Green,
+    };
+    let mode_text = match app.mode {
+        crate::app::Mode::Build => "build",
+        crate::app::Mode::Plan => "plan",
+    };
+    left_spans.push(Span::styled(mode_text, Style::default().fg(mode_color)));
+
+    if app.loading {
+        left_spans.push(Span::raw(" "));
+        let braille_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
+        left_spans.push(Span::styled(braille.to_string(), Style::default().fg(Color::DarkGray)));
+    }
+
+    let tokens_used = app.total_input_tokens + app.total_output_tokens;
+    let percentage = if app.context_window > 0 {
+        (tokens_used * 100) / app.context_window
+    } else {
+        0
+    };
+    let right_text = format!(
+        "{}/{} ({}%)",
+        format_tokens(tokens_used),
+        format_tokens(app.context_window),
+        percentage
+    );
+
+    let status_style = Style::default().fg(Color::DarkGray);
+
+    let total_width = area.width as usize;
+    let left_width: usize = left_spans.iter().map(|s| s.content.len()).sum();
+    let right_width = right_text.len();
+
+    if left_width + right_width + 2 > total_width {
+        frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+    } else {
+        let gap = total_width - left_width - right_width;
+        left_spans.push(Span::raw(" ".repeat(gap)));
+        left_spans.push(Span::styled(right_text, status_style));
+        frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+    }
+}
