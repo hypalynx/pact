@@ -36,6 +36,13 @@ enum LlmEvent {
     Token(String),
     Done,
     Error(String),
+    Usage { input_tokens: usize, output_tokens: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Mode {
+    Build,
+    Plan,
 }
 
 struct App {
@@ -55,6 +62,10 @@ struct App {
     user_scrolled: bool,
     was_at_bottom: bool,
     dragging_scrollbar: bool,
+    mode: Mode,
+    context_window: usize,
+    total_input_tokens: usize,
+    total_output_tokens: usize,
 }
 
 impl App {
@@ -77,6 +88,10 @@ impl App {
             user_scrolled: false,
             was_at_bottom: true,
             dragging_scrollbar: false,
+            mode: Mode::Build,
+            context_window: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         }
     }
 
@@ -460,12 +475,26 @@ fn call_llm(messages: Vec<Message>, tx: mpsc::Sender<LlmEvent>, debug: bool) {
 
             if let Some(data_str) = line.strip_prefix("data: ") {
                 if let Ok(json_val) = serde_json::from_str::<serde_json::Value>(data_str) {
+                    // Check for token deltas
                     if let Some(delta) = json_val
                         .get("delta")
                         .and_then(|d| d.get("text"))
                         .and_then(|t| t.as_str())
                     {
                         let _ = tx.send(LlmEvent::Token(delta.to_string()));
+                    }
+
+                    // Check for usage in message_delta or message_stop events
+                    if let Some(usage) = json_val.get("usage") {
+                        let input_tokens = usage.get("input_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
+                        let output_tokens = usage.get("output_tokens").and_then(|t| t.as_u64()).unwrap_or(0) as usize;
+
+                        if input_tokens > 0 || output_tokens > 0 {
+                            let _ = tx.send(LlmEvent::Usage {
+                                input_tokens,
+                                output_tokens,
+                            });
+                        }
                     }
                 }
             }
@@ -481,6 +510,87 @@ fn call_llm(messages: Vec<Message>, tx: mpsc::Sender<LlmEvent>, debug: bool) {
     let _ = tx.send(LlmEvent::Done);
 }
 
+fn get_pwd_display() -> String {
+    match std::env::current_dir() {
+        Ok(path) => {
+            let home = dirs::home_dir();
+            let path_str = path.to_string_lossy().to_string();
+
+            if let Some(home_path) = home {
+                let home_str = home_path.to_string_lossy().to_string();
+                if path_str.starts_with(&home_str) {
+                    let remainder = path_str[home_str.len()..].to_string();
+                    if remainder.is_empty() {
+                        "~".to_string()
+                    } else {
+                        format!("~{}", remainder)
+                    }
+                } else {
+                    path_str
+                }
+            } else {
+                path_str
+            }
+        }
+        Err(_) => ".".to_string(),
+    }
+}
+
+fn get_git_branch() -> Option<String> {
+    std::process::Command::new("git")
+        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout)
+                    .ok()
+                    .map(|s| s.trim().to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn format_tokens(tokens: usize) -> String {
+    if tokens >= 1000 {
+        format!("{:.0}k", tokens as f64 / 1000.0)
+    } else {
+        tokens.to_string()
+    }
+}
+
+fn fetch_context_window() -> usize {
+    // Try to fetch models from the API
+    let client = reqwest::blocking::Client::new();
+
+    // Try /v1/models endpoint
+    if let Ok(response) = client.get("http://127.0.0.1:7777/v1/models").send() {
+        if let Ok(text) = response.text() {
+            // Try to parse the response as JSON
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                // Look for data array with models
+                if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
+                    if let Some(first_model) = data.first() {
+                        // Try to get max_tokens from first model
+                        if let Some(max_tokens) = first_model.get("max_tokens").and_then(|m| m.as_u64()) {
+                            return max_tokens as usize;
+                        }
+                    }
+                }
+
+                // Alternative: try single model response
+                if let Some(max_tokens) = json.get("max_tokens").and_then(|m| m.as_u64()) {
+                    return max_tokens as usize;
+                }
+            }
+        }
+    }
+
+    // Fallback to default
+    65535
+}
+
 fn main() -> io::Result<()> {
     let args = Args::parse();
     let mut terminal = ratatui::init();
@@ -490,6 +600,7 @@ fn main() -> io::Result<()> {
 
     let mut app = App::new(args.debug);
     app.history = App::load_history().unwrap_or_default();
+    app.context_window = fetch_context_window();
 
     loop {
         terminal.draw(|f| app.draw(f))?;
@@ -534,6 +645,10 @@ fn main() -> io::Result<()> {
                         app.scroll_offset = new_line_count.saturating_sub(height);
                     }
                 }
+                LlmEvent::Usage { input_tokens, output_tokens } => {
+                    app.total_input_tokens += input_tokens;
+                    app.total_output_tokens += output_tokens;
+                }
             }
         }
 
@@ -573,6 +688,12 @@ fn main() -> io::Result<()> {
                             app.delete_char();
                         }
                         KeyCode::Enter => app.submit_message(),
+                        KeyCode::Tab => {
+                            app.mode = match app.mode {
+                                Mode::Build => Mode::Plan,
+                                Mode::Plan => Mode::Build,
+                            };
+                        }
                         KeyCode::Up => app.history_up(),
                         KeyCode::Down => app.history_down(),
                         KeyCode::PageUp => app.scroll_up(),
@@ -626,9 +747,11 @@ impl App {
             Constraint::Min(3),
             Constraint::Length(1),  // gap between messages and input
             Constraint::Length(input_height),
+            Constraint::Length(1),  // gap between input and status
+            Constraint::Length(1),  // status line
         ]);
 
-        let [messages_area, _gap, input_area] = vertical.areas(area);
+        let [messages_area, _gap1, input_area, _gap2, status_area] = vertical.areas(area);
 
         self.messages_rect = messages_area;
         self.input_rect = input_area;
@@ -639,6 +762,7 @@ impl App {
 
         self.draw_messages(frame);
         self.draw_input(frame);
+        self.draw_status(frame, status_area);
     }
 
     fn draw_messages(&self, frame: &mut Frame) {
@@ -788,5 +912,63 @@ impl App {
             byte_count += c.len_utf8();
         }
         (x, y)
+    }
+
+    fn draw_status(&self, frame: &mut Frame, area: Rect) {
+        let pwd = get_pwd_display();
+        let git_branch = get_git_branch();
+
+        let mut left_spans = vec![Span::styled(pwd, Style::default().fg(Color::DarkGray))];
+
+        if let Some(branch) = git_branch {
+            left_spans.push(Span::raw(" "));
+            left_spans.push(Span::styled(
+                format!("[{}]", branch),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        // Add mode indicator
+        left_spans.push(Span::raw(" "));
+        let mode_color = match self.mode {
+            Mode::Build => Color::Cyan,
+            Mode::Plan => Color::Green,
+        };
+        let mode_text = match self.mode {
+            Mode::Build => "build",
+            Mode::Plan => "plan",
+        };
+        left_spans.push(Span::styled(mode_text, Style::default().fg(mode_color)));
+
+        // Calculate token usage (using actual tracked tokens)
+        let tokens_used = self.total_input_tokens + self.total_output_tokens;
+        let percentage = if self.context_window > 0 {
+            (tokens_used * 100) / self.context_window
+        } else {
+            0
+        };
+        let right_text = format!(
+            "{}/{} ({}%)",
+            format_tokens(tokens_used),
+            format_tokens(self.context_window),
+            percentage
+        );
+
+        let status_style = Style::default().fg(Color::DarkGray);
+
+        // Create line with left and right with spacing
+        let total_width = area.width as usize;
+        let left_width: usize = left_spans.iter().map(|s| s.content.len()).sum();
+        let right_width = right_text.len();
+
+        if left_width + right_width + 2 > total_width {
+            // If they don't fit, just show left
+            frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+        } else {
+            let gap = total_width - left_width - right_width;
+            left_spans.push(Span::raw(" ".repeat(gap)));
+            left_spans.push(Span::styled(right_text, status_style));
+            frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+        }
     }
 }
