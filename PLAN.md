@@ -6,26 +6,6 @@ Items raised in this session that still need completion:
 
 1. **Selection highlighting in UI** - When text is selected and copied to clipboard, visually highlight the selected text area in the message display (currently just shows "Copied to clipboard!" message). This requires refactoring the text rendering to track and display selected character ranges.
 
-2. **Out-of-order messages** - User saw some weird message ordering. Need to investigate to see what messages are appearing out of order.
-
----
-
-## Completed This Session
-
-- ✅ Scroll verification - Fixed `calculate_total_lines()` to account for thinking tokens in messages (was only counting pending_thinking, not message.thinking)
-- ✅ Progress bar for LLM generation - Added Progress event, parse progress from SSE responses, display as percentage in status bar (e.g., "60%") while loading
-- ✅ Loading animation across multiple API calls - Verified loading stays true during full tool execution → LLM response cycle. `send_to_llm()` clears pending response/thinking, keeps loading=true
-- ✅ Tool call streaming argument accumulation - Fixed SSE events that stream tool call arguments as JSON fragments
-- ✅ File read tool execution - Tool calls now properly execute and send results back to LLM
-- ✅ Fresh session on startup - Messages load from SQLite for history/debug, but chat starts fresh
-- ✅ Full response reconstruction - SSE deltas now accumulated into complete response with [THINKING], [TEXT], [TOOL_CALLS], [USAGE] sections
-- ✅ Error logging infrastructure - Added error_logs table (though not yet used)
-- ✅ Clipboard timing - Added 100ms sleep to keep clipboard open longer for clipboard managers
-- ✅ Compiler warnings as errors - Set up `.cargo/config.toml` with `--deny warnings`
-- ✅ Removed file-based message.json system - Now SQLite-only for persistence
-- ✅ Clippy linting - Fixed all clippy warnings without using suppression annotations
-- ✅ Tool result display - Shows "Reading filename" instead of full file content
-
 ---
 
 ## Previous Development Plan (Archived Content)
