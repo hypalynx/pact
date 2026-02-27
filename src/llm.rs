@@ -134,9 +134,15 @@ pub fn call_llm(
             if let Some(data_str) = line.strip_prefix("data: ")
                 && let Ok(json_val) = serde_json::from_str::<serde_json::Value>(data_str)
             {
+                // Extract delta from OpenAI format: {"choices":[{"delta":{...}}]}
+                let delta_obj = json_val
+                    .get("choices")
+                    .and_then(|c| c.get(0))
+                    .and_then(|c| c.get("delta"));
+
                 // Log all delta events for debugging
                 if debug
-                    && let Some(delta) = json_val.get("delta")
+                    && let Some(delta) = delta_obj
                     && let Some(ref mut f) = log_file
                 {
                     let _ = writeln!(
@@ -147,8 +153,7 @@ pub fn call_llm(
                 }
 
                 // Check for text tokens (content field for OpenAI format)
-                if let Some(delta) = json_val
-                    .get("delta")
+                if let Some(delta) = delta_obj
                     .and_then(|d| d.get("content"))
                     .and_then(|t| t.as_str())
                 {
@@ -201,8 +206,7 @@ pub fn call_llm(
                 }
 
                 // Check for reasoning/thinking tokens
-                if let Some(thinking) = json_val
-                    .get("delta")
+                if let Some(thinking) = delta_obj
                     .and_then(|d| d.get("reasoning_content"))
                     .and_then(|t| t.as_str())
                 {
@@ -210,8 +214,7 @@ pub fn call_llm(
                 }
 
                 // Check for tool calls in delta
-                if let Some(tool_calls) = json_val
-                    .get("delta")
+                if let Some(tool_calls) = delta_obj
                     .and_then(|d| d.get("tool_calls"))
                     .and_then(|tc| tc.as_array())
                 {

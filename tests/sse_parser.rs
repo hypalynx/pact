@@ -4,34 +4,47 @@ use serde_json::json;
 
 #[test]
 fn test_parse_text_token() {
+    // Real OpenAI format: delta is nested under choices[0]
     let json_val = json!({
-        "delta": {
-            "content": "Hello world"
-        }
+        "choices": [{
+            "delta": {
+                "content": "Hello world"
+            }
+        }]
     });
 
-    if let Some(delta_str) = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    if let Some(delta_str) = delta
         .and_then(|d| d.get("content"))
         .and_then(|t| t.as_str())
     {
         assert_eq!(delta_str, "Hello world");
         assert!(!delta_str.contains("<tool_call>"));
     } else {
-        panic!("Failed to extract content");
+        panic!("Failed to extract content from choices[0].delta");
     }
 }
 
 #[test]
 fn test_parse_thinking_token() {
     let json_val = json!({
-        "delta": {
-            "reasoning_content": "Let me think about this carefully..."
-        }
+        "choices": [{
+            "delta": {
+                "reasoning_content": "Let me think about this carefully..."
+            }
+        }]
     });
 
-    if let Some(thinking) = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    if let Some(thinking) = delta
         .and_then(|d| d.get("reasoning_content"))
         .and_then(|t| t.as_str())
     {
@@ -44,20 +57,26 @@ fn test_parse_thinking_token() {
 #[test]
 fn test_parse_structured_tool_call() {
     let json_val = json!({
-        "delta": {
-            "tool_calls": [{
-                "id": "call_abc123",
-                "type": "function",
-                "function": {
-                    "name": "read",
-                    "arguments": r#"{"filePath":"/etc/hosts"}"#
-                }
-            }]
-        }
+        "choices": [{
+            "delta": {
+                "tool_calls": [{
+                    "id": "call_abc123",
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": r#"{"filePath":"/etc/hosts"}"#
+                    }
+                }]
+            }
+        }]
     });
 
-    if let Some(tool_calls) = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    if let Some(tool_calls) = delta
         .and_then(|d| d.get("tool_calls"))
         .and_then(|tc| tc.as_array())
     {
@@ -88,22 +107,28 @@ fn test_parse_structured_tool_call() {
 fn test_parse_qwen_text_tool_call() {
     let tool_call_json = r#"{"name":"read","arguments":{"filePath":"/home/user/file.txt"}}"#;
     let json_val = json!({
-        "delta": {
-            "content": format!("<tool_call>{}</tool_call>", tool_call_json)
-        }
+        "choices": [{
+            "delta": {
+                "content": format!("<tool_call>{}</tool_call>", tool_call_json)
+            }
+        }]
     });
 
-    if let Some(delta) = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    if let Some(delta_str) = delta
         .and_then(|d| d.get("content"))
         .and_then(|t| t.as_str())
     {
-        assert!(delta.contains("<tool_call>"));
+        assert!(delta_str.contains("<tool_call>"));
 
-        if let Some(tool_json_start) = delta.find('{')
-            && let Some(tool_json_end) = delta.rfind('}')
+        if let Some(tool_json_start) = delta_str.find('{')
+            && let Some(tool_json_end) = delta_str.rfind('}')
         {
-            let tool_json_str = &delta[tool_json_start..=tool_json_end];
+            let tool_json_str = &delta_str[tool_json_start..=tool_json_end];
             let tool_json: serde_json::Value = serde_json::from_str(tool_json_str).unwrap();
 
             assert_eq!(
@@ -126,6 +151,7 @@ fn test_parse_qwen_text_tool_call() {
 
 #[test]
 fn test_parse_usage_tokens() {
+    // Usage is at root level, not in choices
     let json_val = json!({
         "usage": {
             "prompt_tokens": 42,
@@ -173,30 +199,36 @@ fn test_tool_parameter_normalization() {
 #[test]
 fn test_multiple_tool_calls() {
     let json_val = json!({
-        "delta": {
-            "tool_calls": [
-                {
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {
-                        "name": "read",
-                        "arguments": r#"{"filePath":"/file1.txt"}"#
+        "choices": [{
+            "delta": {
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "read",
+                            "arguments": r#"{"filePath":"/file1.txt"}"#
+                        }
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {
+                            "name": "read",
+                            "arguments": r#"{"filePath":"/file2.txt"}"#
+                        }
                     }
-                },
-                {
-                    "id": "call_2",
-                    "type": "function",
-                    "function": {
-                        "name": "read",
-                        "arguments": r#"{"filePath":"/file2.txt"}"#
-                    }
-                }
-            ]
-        }
+                ]
+            }
+        }]
     });
 
-    if let Some(tool_calls) = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    if let Some(tool_calls) = delta
         .and_then(|d| d.get("tool_calls"))
         .and_then(|tc| tc.as_array())
     {
@@ -207,18 +239,23 @@ fn test_multiple_tool_calls() {
 #[test]
 fn test_mixed_content_and_thinking() {
     let json_val = json!({
-        "delta": {
-            "reasoning_content": "Analyzing...",
-            "content": "Result"
-        }
+        "choices": [{
+            "delta": {
+                "reasoning_content": "Analyzing...",
+                "content": "Result"
+            }
+        }]
     });
 
-    let thinking = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    let thinking = delta
         .and_then(|d| d.get("reasoning_content"))
         .and_then(|t| t.as_str());
-    let content = json_val
-        .get("delta")
+    let content = delta
         .and_then(|d| d.get("content"))
         .and_then(|c| c.as_str());
 
@@ -228,20 +265,20 @@ fn test_mixed_content_and_thinking() {
 
 #[test]
 fn test_empty_delta() {
-    let json_val = json!({"delta": {}});
+    let json_val = json!({
+        "choices": [{
+            "delta": {}
+        }]
+    });
 
-    let has_content = json_val
-        .get("delta")
-        .and_then(|d| d.get("content"))
-        .is_some();
-    let has_thinking = json_val
-        .get("delta")
-        .and_then(|d| d.get("reasoning_content"))
-        .is_some();
-    let has_tool_calls = json_val
-        .get("delta")
-        .and_then(|d| d.get("tool_calls"))
-        .is_some();
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    let has_content = delta.and_then(|d| d.get("content")).is_some();
+    let has_thinking = delta.and_then(|d| d.get("reasoning_content")).is_some();
+    let has_tool_calls = delta.and_then(|d| d.get("tool_calls")).is_some();
 
     assert!(!has_content);
     assert!(!has_thinking);
@@ -267,20 +304,26 @@ fn test_finish_reason() {
 #[test]
 fn test_complex_tool_arguments() {
     let json_val = json!({
-        "delta": {
-            "tool_calls": [{
-                "id": "call_123",
-                "type": "function",
-                "function": {
-                    "name": "bash",
-                    "arguments": r#"{"command":"ls -la","workdir":"/home/user","timeout":30}"#
-                }
-            }]
-        }
+        "choices": [{
+            "delta": {
+                "tool_calls": [{
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {
+                        "name": "bash",
+                        "arguments": r#"{"command":"ls -la","workdir":"/home/user","timeout":30}"#
+                    }
+                }]
+            }
+        }]
     });
 
-    if let Some(tool_calls) = json_val
-        .get("delta")
+    let delta = json_val
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("delta"));
+
+    if let Some(tool_calls) = delta
         .and_then(|d| d.get("tool_calls"))
         .and_then(|tc| tc.as_array())
     {
