@@ -99,4 +99,35 @@ impl Db {
         }
         Ok(result)
     }
+
+    pub fn load_messages(&self) -> Result<Vec<crate::llm::Message>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT role, text, is_tool_result, thinking FROM messages ORDER BY id ASC")?;
+
+        let messages = stmt.query_map([], |row| {
+            Ok(crate::llm::Message {
+                role: row.get(0)?,
+                text: row.get(1)?,
+                is_tool_result: row.get::<_, i64>(2)? != 0,
+                thinking: row.get(3)?,
+            })
+        })?;
+
+        let mut result = Vec::new();
+        for msg in messages {
+            result.push(msg?);
+        }
+        Ok(result)
+    }
+
+    pub fn clear_messages(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM messages", [])?;
+        Ok(())
+    }
+
+    pub fn clear_api_logs(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM api_logs", [])?;
+        Ok(())
+    }
 }

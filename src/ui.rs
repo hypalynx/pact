@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
 };
 
 fn parse_color(color_str: &str) -> Color {
@@ -52,6 +52,10 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     draw_messages(app, frame);
     draw_input(app, frame);
     draw_status(app, frame, status_area);
+
+    if app.show_debug {
+        draw_debug_modal(app, frame);
+    }
 }
 
 fn draw_messages(app: &App, frame: &mut Frame) {
@@ -298,4 +302,96 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         left_spans.push(Span::styled(right_text, status_style));
         frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
     }
+}
+
+fn draw_debug_modal(app: &App, frame: &mut Frame) {
+    let frame_area = frame.area();
+    let modal_width = (frame_area.width * 9 / 10).max(40);
+    let modal_height = (frame_area.height * 8 / 10).max(10);
+
+    let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Debug: API Logs  [e]rrors-only  [c]lear logs  [m]clear msgs  [Esc]close ")
+        .title_alignment(ratatui::layout::Alignment::Left);
+
+    let inner = modal_area.inner(ratatui::layout::Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
+
+    let mut lines = Vec::new();
+
+    // Filter logs based on error filter
+    let filtered_logs: Vec<_> = if app.debug_filter_errors {
+        app.debug_logs
+            .iter()
+            .filter(|log| log.error_message.is_some())
+            .collect()
+    } else {
+        app.debug_logs.iter().collect()
+    };
+
+    // Apply scroll offset
+    let visible_logs = filtered_logs
+        .iter()
+        .skip(app.debug_scroll)
+        .take((inner.height as usize).saturating_sub(1));
+
+    for log in visible_logs {
+        let status_icon = if log.error_message.is_some() {
+            Span::styled("✗", Style::default().fg(Color::Red))
+        } else {
+            Span::styled("✓", Style::default().fg(Color::Green))
+        };
+
+        let time_str = log
+            .created_at
+            .split('T')
+            .nth(1)
+            .unwrap_or("")
+            .split('+')
+            .next()
+            .unwrap_or("");
+        let time_span = Span::styled(time_str.to_string(), Style::default().fg(Color::DarkGray));
+
+        let duration_str = format!("{}ms", log.duration_ms.unwrap_or(0));
+        let duration_span = Span::raw(format!("  {}  ", duration_str));
+
+        if let Some(ref err) = log.error_message {
+            let error_text = format!("Error: {}", err);
+            lines.push(Line::from(vec![
+                time_span,
+                Span::raw("  "),
+                status_icon,
+                duration_span,
+                Span::styled(error_text, Style::default().fg(Color::Red)),
+            ]));
+        } else {
+            let truncated_body = if log.request_body.len() > 60 {
+                format!("{}...", &log.request_body[..57])
+            } else {
+                log.request_body.clone()
+            };
+            lines.push(Line::from(vec![
+                time_span,
+                Span::raw("  "),
+                status_icon,
+                duration_span,
+                Span::raw(truncated_body),
+            ]));
+        }
+    }
+
+    frame.render_widget(block, modal_area);
+    frame.render_widget(Paragraph::new(lines), inner);
 }

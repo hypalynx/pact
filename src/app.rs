@@ -44,6 +44,10 @@ pub struct App {
     pub last_copy_frame: u32,
     pub error_message: Option<String>,
     pub error_frame: u32,
+    pub show_debug: bool,
+    pub debug_scroll: usize,
+    pub debug_filter_errors: bool,
+    pub debug_logs: Vec<crate::db::ApiLogEntry>,
 }
 
 impl App {
@@ -102,6 +106,10 @@ impl App {
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
             error_message: db_error,
             error_frame: 0,
+            show_debug: false,
+            debug_scroll: 0,
+            debug_filter_errors: false,
+            debug_logs: Vec::new(),
         }
     }
 
@@ -474,5 +482,24 @@ impl App {
             return false;
         }
         self.frame_count.saturating_sub(self.last_copy_frame) < 125
+    }
+
+    pub fn refresh_debug_logs(&mut self) {
+        if let Some(db) = &self.db {
+            self.debug_logs = db.recent_api_logs(100).unwrap_or_default();
+        }
+    }
+
+    pub fn load_messages_from_db(&mut self) {
+        if let Some(db) = &self.db {
+            if let Ok(msgs) = db.load_messages() {
+                self.history = msgs
+                    .iter()
+                    .filter(|m| m.role == "user" && !m.is_tool_result)
+                    .map(|m| m.text.clone())
+                    .collect();
+                self.messages = msgs;
+            }
+        }
     }
 }

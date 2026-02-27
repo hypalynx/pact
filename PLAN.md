@@ -51,6 +51,9 @@
   - [ ] either get a shorter name from the llama.cpp api or
     extract model names from the gguf files better i.e
     `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` => `Qwen3 Coder`
+  - [ ] add vertical margin to user messages in the messages
+    buffer/section
+  - [ ] @file completion
 
 ---
 

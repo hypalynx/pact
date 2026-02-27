@@ -53,6 +53,8 @@ fn main() -> std::io::Result<()> {
         modes_config,
     );
     app.history = App::load_history().unwrap_or_default();
+    // Restore full conversation from DB (replaces load_history if DB has data)
+    app.load_messages_from_db();
     app.context_window = server_info.context_window;
     app.model_name = server_info.model_name;
 
@@ -155,6 +157,50 @@ fn main() -> std::io::Result<()> {
                     if key.kind != KeyEventKind::Press {
                         continue;
                     }
+
+                    // Ctrl+G always toggles debug modal
+                    if let KeyCode::Char('g') = key.code {
+                        if key.modifiers.contains(event::KeyModifiers::CONTROL) {
+                            app.show_debug = !app.show_debug;
+                            if app.show_debug {
+                                app.refresh_debug_logs();
+                                app.debug_scroll = 0;
+                            }
+                            continue;
+                        }
+                    }
+
+                    // Handle modal keys when debug modal is open
+                    if app.show_debug {
+                        match key.code {
+                            KeyCode::Esc => app.show_debug = false,
+                            KeyCode::Char('e') => {
+                                app.debug_filter_errors = !app.debug_filter_errors
+                            }
+                            KeyCode::Char('c') => {
+                                if let Some(db) = &app.db {
+                                    let _ = db.clear_api_logs();
+                                    app.refresh_debug_logs();
+                                }
+                            }
+                            KeyCode::Char('m') => {
+                                if let Some(db) = &app.db {
+                                    let _ = db.clear_messages();
+                                    app.messages.clear();
+                                    app.history.clear();
+                                }
+                            }
+                            KeyCode::Up | KeyCode::PageUp => {
+                                app.debug_scroll = app.debug_scroll.saturating_sub(3);
+                            }
+                            KeyCode::Down | KeyCode::PageDown => {
+                                app.debug_scroll += 3;
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
                     match key.code {
                         KeyCode::Char('c')
                             if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
