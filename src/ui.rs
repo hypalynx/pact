@@ -223,8 +223,13 @@ fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {
 fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     let mut left_spans = Vec::new();
 
-    // Show copy notification if recent, otherwise show normal status
-    if app.is_copying() {
+    // Show error notification if present, otherwise copy notification, otherwise normal status
+    if let Some(ref error) = app.error_message {
+        left_spans.push(Span::styled(
+            format!("⚠ {}", error),
+            Style::default().fg(Color::Red),
+        ));
+    } else if app.is_copying() {
         left_spans.push(Span::styled(
             "Copied to clipboard!",
             Style::default().fg(Color::Yellow),

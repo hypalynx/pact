@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod db;
 mod llm;
 mod text;
 mod tools;
@@ -77,12 +78,17 @@ fn main() -> std::io::Result<()> {
                     } else {
                         Some(std::mem::take(&mut app.pending_thinking))
                     };
-                    app.messages.push(llm::Message {
+                    let msg = llm::Message {
                         role: "assistant".to_string(),
                         text,
                         is_tool_result: false,
                         thinking,
-                    });
+                    };
+                    app.messages.push(msg.clone());
+                    // Save assistant message to database if available
+                    if let Some(db) = &app.db {
+                        let _ = db.save_message(&msg);
+                    }
                     app.loading = false;
                     if !app.user_scrolled {
                         let new_line_count = app.calculate_total_lines();
@@ -122,6 +128,15 @@ fn main() -> std::io::Result<()> {
                         thinking: None,
                     });
                     app.send_to_llm();
+                }
+                llm::LlmEvent::ApiLog {
+                    request_body,
+                    duration_ms,
+                    error_message,
+                } => {
+                    if let Some(db) = &app.db {
+                        let _ = db.save_api_log(&request_body, duration_ms, error_message.as_deref());
+                    }
                 }
             }
         }

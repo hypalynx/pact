@@ -1,10 +1,9 @@
 use crate::tools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -29,6 +28,11 @@ pub enum LlmEvent {
         name: String,
         args: serde_json::Map<String, serde_json::Value>,
     },
+    ApiLog {
+        request_body: String,
+        duration_ms: u64,
+        error_message: Option<String>,
+    },
 }
 
 pub fn call_llm(
@@ -40,13 +44,23 @@ pub fn call_llm(
     temperature: Option<f32>,
     system_prompt: Option<String>,
 ) {
+    let start_time = Instant::now();
+
     let client = match reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
     {
         Ok(c) => c,
         Err(e) => {
-            let _ = tx.send(LlmEvent::Error(format!("Failed to create client: {}", e)));
+            let err_msg = format!("Failed to create client: {}", e);
+            let _ = tx.send(LlmEvent::Error(err_msg.clone()));
+            if debug {
+                let _ = tx.send(LlmEvent::ApiLog {
+                    request_body: String::new(),
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    error_message: Some(err_msg),
+                });
+            }
             return;
         }
     };
@@ -79,23 +93,7 @@ pub fn call_llm(
         body["temperature"] = json!(temp);
     }
 
-    if debug {
-        let _ = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("api.log")
-            .and_then(|mut file| {
-                writeln!(file, "=== REQUEST {} ===", chrono::Local::now())?;
-                writeln!(file, "POST {}/v1/chat/completions", endpoint)?;
-                writeln!(
-                    file,
-                    "{}",
-                    serde_json::to_string_pretty(&body).unwrap_or_default()
-                )?;
-                writeln!(file, "\n=== RESPONSE ===")?;
-                Ok(())
-            });
-    }
+    let request_body = serde_json::to_string_pretty(&body).unwrap_or_default();
 
     let response = match client
         .post(format!("{}/v1/chat/completions", endpoint))
@@ -104,29 +102,23 @@ pub fn call_llm(
     {
         Ok(r) => r,
         Err(e) => {
-            let _ = tx.send(LlmEvent::Error(format!("Request failed: {}", e)));
+            let err_msg = format!("Request failed: {}", e);
+            let _ = tx.send(LlmEvent::Error(err_msg.clone()));
+            if debug {
+                let _ = tx.send(LlmEvent::ApiLog {
+                    request_body,
+                    duration_ms: start_time.elapsed().as_millis() as u64,
+                    error_message: Some(err_msg),
+                });
+            }
             return;
         }
-    };
-
-    let mut log_file = if debug {
-        fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("api.log")
-            .ok()
-    } else {
-        None
     };
 
     let reader = BufReader::new(response);
 
     for line in reader.lines() {
         if let Ok(line) = line {
-            if debug && let Some(ref mut f) = log_file {
-                let _ = writeln!(f, "{}", line);
-            }
-
             if line == "data: [DONE]" {
                 break;
             }
@@ -139,18 +131,6 @@ pub fn call_llm(
                     .get("choices")
                     .and_then(|c| c.get(0))
                     .and_then(|c| c.get("delta"));
-
-                // Log all delta events for debugging
-                if debug
-                    && let Some(delta) = delta_obj
-                    && let Some(ref mut f) = log_file
-                {
-                    let _ = writeln!(
-                        f,
-                        "DELTA: {}",
-                        serde_json::to_string_pretty(&delta).unwrap_or_default()
-                    );
-                }
 
                 // Check for text tokens (content field for OpenAI format)
                 if let Some(delta) = delta_obj
@@ -218,13 +198,6 @@ pub fn call_llm(
                     .and_then(|d| d.get("tool_calls"))
                     .and_then(|tc| tc.as_array())
                 {
-                    if debug && let Some(ref mut f) = log_file {
-                        let _ = writeln!(
-                            f,
-                            "TOOL_CALLS: {}",
-                            serde_json::to_string_pretty(&tool_calls).unwrap_or_default()
-                        );
-                    }
                     for tool_call in tool_calls {
                         if let Some(function) = tool_call.get("function")
                             && let (Some(name), Some(args_str)) = (
@@ -268,8 +241,12 @@ pub fn call_llm(
         }
     }
 
-    if debug && let Some(mut f) = log_file {
-        let _ = writeln!(f, "===\n");
+    if debug {
+        let _ = tx.send(LlmEvent::ApiLog {
+            request_body,
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            error_message: None,
+        });
     }
 
     let _ = tx.send(LlmEvent::Done);

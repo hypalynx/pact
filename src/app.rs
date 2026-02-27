@@ -1,3 +1,4 @@
+use crate::db::Db;
 use crate::llm::{LlmEvent, Message};
 use crate::text::wrap_text;
 use indexmap::IndexMap;
@@ -7,6 +8,7 @@ use std::io;
 use std::sync::mpsc;
 
 pub struct App {
+    pub db: Option<Db>,
     pub messages: Vec<Message>,
     pub history: Vec<String>,
     pub history_index: Option<usize>,
@@ -40,6 +42,8 @@ pub struct App {
     pub selection_start: Option<(u16, u16)>,
     pub selection_end: Option<(u16, u16)>,
     pub last_copy_frame: u32,
+    pub error_message: Option<String>,
+    pub error_frame: u32,
 }
 
 impl App {
@@ -55,7 +59,14 @@ impl App {
         let available_modes: Vec<String> = modes_config.keys().cloned().collect();
         let mode_color = modes_config.get(&mode_name).and_then(|m| m.color.clone());
 
+        // Initialize database (graceful failure)
+        let (db, db_error) = match Db::open().and_then(|db| db.init_schema().map(|_| db)) {
+            Ok(db) => (Some(db), None),
+            Err(e) => (None, Some(format!("Database error: {}", e))),
+        };
+
         Self {
+            db,
             messages: Vec::new(),
             history: Vec::new(),
             history_index: None,
@@ -89,6 +100,8 @@ impl App {
             selection_start: None,
             selection_end: None,
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
+            error_message: db_error,
+            error_frame: 0,
         }
     }
 
@@ -125,14 +138,18 @@ impl App {
         }
         let text = std::mem::take(&mut self.input);
         self.history.push(text.clone());
-        self.messages.push(Message {
+        let msg = Message {
             role: "user".to_string(),
             text: text.clone(),
             is_tool_result: false,
             thinking: None,
-        });
+        };
+        self.messages.push(msg.clone());
         self.history_index = None;
-        self.save_history().ok();
+        // Save user message to database if available
+        if let Some(db) = &self.db {
+            let _ = db.save_message(&msg);
+        }
         self.input = String::new();
         self.cursor_pos = 0;
         self.send_to_llm();

@@ -10,22 +10,28 @@
 - ✅ Kept both tool call parsers (Qwen text format + OpenAI structured)
 - ✅ Improved tool descriptions and renamed path → filePath
 
-### Current Focus: Communication & Debugging (Feb 27, 2026)
-**Priority:** Now implementing debug/logging infrastructure and UI rendering
+### ✅ Phase 1: SQLite Migration (COMPLETED Feb 27, 2026)
+- ✅ Added `rusqlite` with bundled SQLite
+- ✅ Created `src/db.rs` with schema and CRUD operations
+- ✅ Database location: `~/.local/share/pact/pact.db`
+- ✅ User messages saved to DB on submit
+- ✅ Assistant messages saved to DB on Done
+- ✅ API logs saved to DB (request_body, duration_ms, error_message)
+- ✅ Removed file-based `api.log` writes, now using `LlmEvent::ApiLog`
+- ✅ All tests passing
 
-1. **Remaining Communication Tasks**
-   - [ ] Render thinking tokens in UI (dimmed/grey, inline before response)
-   - [ ] Message content array format `[{"type": "text", "text": "..."}]` (optional, low priority)
+### Current Focus: Debug UI & Control Panel (Next)
+**Priority:** Implement debug view for querying API logs and message history
 
-2. **Debug Infrastructure**
-   - [ ] Add debug UI inside pact (accessible from control panel)
-   - [ ] Migrate from `api.log` to SQLite database storage
+1. **Remaining Debug Infrastructure**
+   - [ ] Add debug UI inside pact (accessible from modal or switchable view)
+   - [ ] Query recent API logs from DB
    - [ ] Control panel UI for cache/log management
 
-3. **Data Storage**
-   - [ ] Move from JSON (`messages.json`) to SQLite
-   - [ ] Store debug logs in SQLite (with timestamps, type filtering)
-   - [ ] Control panel for managing stored data
+2. **Message History**
+   - [ ] Load messages from DB on startup (for conversation restoration)
+   - [ ] Display message count and usage in status bar
+   - [ ] Option to clear/export message history
 
 4. **Other tasks**
    - [ ] Read user AGENTS.md and AGENTS.md for files in projects
@@ -39,7 +45,12 @@
 
   - [ ] tool_call blocks
   - [ ] thinking blocks
-  - [ ] ..markdown? I don't know
+  - [ ] better markdown highlighting/parsing?
+  - [ ] other tools? question? todos etc (there were 13 or so
+    mentioned from out mitmproxy opencode logs
+  - [ ] either get a shorter name from the llama.cpp api or
+    extract model names from the gguf files better i.e
+    `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` => `Qwen3 Coder`
 
 ---
 
@@ -325,28 +336,30 @@ CREATE TABLE debug_settings (
 
 **Estimated Scope**: 5-8 hours (includes refactoring + testing)
 
-### Phase 1: Debug Infrastructure
-**Goal**: Have debug UI + SQLite ready before expanding tools
+### ✅ Phase 1: Debug Infrastructure - SQLite Migration (COMPLETED Feb 27, 2026)
+**Goal**: Have SQLite ready before expanding tools and debug UI
 
-1. SQLite migration
-   - [ ] Design schema
-   - [ ] Create database module
-   - [ ] Load existing messages.json on startup
-   - [ ] Update app to save messages to DB
+1. ✅ SQLite migration
+   - ✅ Design schema (messages, api_logs tables)
+   - ✅ Create database module (src/db.rs)
+   - ✅ User messages saved on submit
+   - ✅ Assistant messages saved on Done
+   - ✅ API logs saved (request_body, duration_ms, error_message)
+   - [ ] Load existing messages.json on startup (deferred to Phase 2)
 
-2. Debug UI
+2. Debug UI (NEXT)
    - [ ] Create debug view (ratatui panel)
    - [ ] Query recent API logs
    - [ ] Display request/response
    - [ ] Show errors
 
-3. Control panel
+3. Control panel (FUTURE)
    - [ ] Message history view
    - [ ] Debug log viewer
    - [ ] Settings/cache management
    - [ ] Data export
 
-**Estimated Scope**: 10-15 hours
+**Phase 1 Scope**: ✅ COMPLETE (5 hours)
 
 ### Phase 2: Core Tools
 **Goal**: bash, glob, grep with proper logging
