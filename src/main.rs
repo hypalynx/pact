@@ -1,3 +1,10 @@
+#![deny(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    clippy::dbg_macro,
+    // Note: eprintln! will fail the build with this deny
+)]
+
 mod app;
 mod config;
 mod db;

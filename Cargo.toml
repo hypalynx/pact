@@ -17,3 +17,9 @@ serde_yaml = "0.9"
 indexmap = { version = "2", features = ["serde"] }
 arboard = "3"
 rusqlite = { version = "0.31", features = ["bundled"] }
+
+[lints.clippy]
+# Prevent eprintln! macros (corrupts TUI) - use status bar or logging instead
+print_stderr = "deny"
+print_stdout = "deny"
+dbg_macro = "deny"

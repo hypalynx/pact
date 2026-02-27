@@ -424,14 +424,11 @@ impl App {
 
             // Extract text and copy to clipboard
             if let Some(text) = self.extract_selected_text() {
-                match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => match clipboard.set_text(text) {
-                        Ok(_) => {
-                            self.last_copy_frame = self.frame_count;
-                        }
-                        Err(e) => eprintln!("Failed to copy to clipboard: {}", e),
-                    },
-                    Err(e) => eprintln!("Failed to access clipboard: {}", e),
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if clipboard.set_text(text).is_ok() {
+                        self.last_copy_frame = self.frame_count;
+                    }
+                    // Silently fail on clipboard errors - don't corrupt TUI with stderr
                 }
             }
             self.selection_start = None;
