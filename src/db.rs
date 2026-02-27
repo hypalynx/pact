@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 
 pub struct Db {
@@ -65,12 +65,7 @@ impl Db {
         Ok(())
     }
 
-    pub fn save_api_log(
-        &self,
-        body: &str,
-        duration_ms: u64,
-        error: Option<&str>,
-    ) -> Result<()> {
+    pub fn save_api_log(&self, body: &str, duration_ms: u64, error: Option<&str>) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO api_logs (created_at, request_body, duration_ms, error_message)

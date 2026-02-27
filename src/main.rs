@@ -142,7 +142,8 @@ fn main() -> std::io::Result<()> {
                     error_message,
                 } => {
                     if let Some(db) = &app.db {
-                        let _ = db.save_api_log(&request_body, duration_ms, error_message.as_deref());
+                        let _ =
+                            db.save_api_log(&request_body, duration_ms, error_message.as_deref());
                     }
                 }
             }
