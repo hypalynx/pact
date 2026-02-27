@@ -30,6 +30,7 @@ pub enum LlmEvent {
     },
     ApiLog {
         request_body: String,
+        response_body: Option<String>,
         duration_ms: u64,
         error_message: Option<String>,
     },
@@ -57,6 +58,7 @@ pub fn call_llm(
             if debug {
                 let _ = tx.send(LlmEvent::ApiLog {
                     request_body: String::new(),
+                    response_body: None,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     error_message: Some(err_msg),
                 });
@@ -107,6 +109,7 @@ pub fn call_llm(
             if debug {
                 let _ = tx.send(LlmEvent::ApiLog {
                     request_body,
+                    response_body: None,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     error_message: Some(err_msg),
                 });
@@ -244,6 +247,7 @@ pub fn call_llm(
     if debug {
         let _ = tx.send(LlmEvent::ApiLog {
             request_body,
+            response_body: None,
             duration_ms: start_time.elapsed().as_millis() as u64,
             error_message: None,
         });

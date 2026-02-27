@@ -7,6 +7,13 @@ use std::fs;
 use std::io;
 use std::sync::mpsc;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PanelState {
+    None,
+    ControlPanel,
+    Debug,
+}
+
 pub struct App {
     pub db: Option<Db>,
     pub messages: Vec<Message>,
@@ -44,10 +51,13 @@ pub struct App {
     pub last_copy_frame: u32,
     pub error_message: Option<String>,
     pub error_frame: u32,
-    pub show_debug: bool,
+    pub panel_state: PanelState,
     pub debug_scroll: usize,
     pub debug_filter_errors: bool,
     pub debug_logs: Vec<crate::db::ApiLogEntry>,
+    pub debug_selected_row: usize,
+    pub debug_expanded_row: Option<usize>,
+    pub debug_expand_scroll: usize,
 }
 
 impl App {
@@ -106,10 +116,13 @@ impl App {
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
             error_message: db_error,
             error_frame: 0,
-            show_debug: false,
+            panel_state: PanelState::None,
             debug_scroll: 0,
             debug_filter_errors: false,
             debug_logs: Vec::new(),
+            debug_selected_row: 0,
+            debug_expanded_row: None,
+            debug_expand_scroll: 0,
         }
     }
 
@@ -500,6 +513,27 @@ impl App {
                     .collect();
                 self.messages = msgs;
             }
+        }
+    }
+
+    pub fn debug_filtered_logs(&self) -> Vec<&crate::db::ApiLogEntry> {
+        if self.debug_filter_errors {
+            self.debug_logs
+                .iter()
+                .filter(|log| log.error_message.is_some())
+                .collect()
+        } else {
+            self.debug_logs.iter().collect()
+        }
+    }
+
+    pub fn toggle_debug_row_expand(&mut self, row_idx: usize) {
+        if self.debug_expanded_row == Some(row_idx) {
+            self.debug_expanded_row = None;
+            self.debug_expand_scroll = 0;
+        } else {
+            self.debug_expanded_row = Some(row_idx);
+            self.debug_expand_scroll = 0;
         }
     }
 }

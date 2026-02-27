@@ -53,8 +53,6 @@ fn main() -> std::io::Result<()> {
         modes_config,
     );
     app.history = App::load_history().unwrap_or_default();
-    // Restore full conversation from DB (replaces load_history if DB has data)
-    app.load_messages_from_db();
     app.context_window = server_info.context_window;
     app.model_name = server_info.model_name;
 
@@ -140,12 +138,17 @@ fn main() -> std::io::Result<()> {
                 }
                 llm::LlmEvent::ApiLog {
                     request_body,
+                    response_body,
                     duration_ms,
                     error_message,
                 } => {
                     if let Some(db) = &app.db {
-                        let _ =
-                            db.save_api_log(&request_body, duration_ms, error_message.as_deref());
+                        let _ = db.save_api_log(
+                            &request_body,
+                            response_body.as_deref(),
+                            duration_ms,
+                            error_message.as_deref(),
+                        );
                     }
                 }
             }
@@ -158,47 +161,111 @@ fn main() -> std::io::Result<()> {
                         continue;
                     }
 
-                    // Ctrl+G always toggles debug modal
+                    // Ctrl+G toggles control panel
                     if let KeyCode::Char('g') = key.code {
                         if key.modifiers.contains(event::KeyModifiers::CONTROL) {
-                            app.show_debug = !app.show_debug;
-                            if app.show_debug {
-                                app.refresh_debug_logs();
-                                app.debug_scroll = 0;
-                            }
+                            app.panel_state = match app.panel_state {
+                                crate::app::PanelState::None => {
+                                    crate::app::PanelState::ControlPanel
+                                }
+                                _ => crate::app::PanelState::None,
+                            };
                             continue;
                         }
                     }
 
-                    // Handle modal keys when debug modal is open
-                    if app.show_debug {
-                        match key.code {
-                            KeyCode::Esc => app.show_debug = false,
-                            KeyCode::Char('e') => {
-                                app.debug_filter_errors = !app.debug_filter_errors
-                            }
-                            KeyCode::Char('c') => {
-                                if let Some(db) = &app.db {
-                                    let _ = db.clear_api_logs();
+                    // Handle panel keys
+                    match app.panel_state {
+                        crate::app::PanelState::ControlPanel => {
+                            match key.code {
+                                KeyCode::Esc => app.panel_state = crate::app::PanelState::None,
+                                KeyCode::Char('d') | KeyCode::Char('D') => {
+                                    app.panel_state = crate::app::PanelState::Debug;
                                     app.refresh_debug_logs();
+                                    app.debug_scroll = 0;
                                 }
+                                _ => {}
                             }
-                            KeyCode::Char('m') => {
-                                if let Some(db) = &app.db {
-                                    let _ = db.clear_messages();
-                                    app.messages.clear();
-                                    app.history.clear();
-                                }
-                            }
-                            KeyCode::Up | KeyCode::PageUp => {
-                                app.debug_scroll = app.debug_scroll.saturating_sub(3);
-                            }
-                            KeyCode::Down | KeyCode::PageDown => {
-                                app.debug_scroll += 3;
-                            }
-                            _ => {}
+                            continue;
                         }
-                        continue;
+                        crate::app::PanelState::Debug => {
+                            if app.debug_expanded_row.is_some() {
+                                // Expanded view key handling
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        app.debug_expanded_row = None;
+                                        app.debug_expand_scroll = 0;
+                                    }
+                                    KeyCode::Up | KeyCode::PageUp => {
+                                        app.debug_expand_scroll =
+                                            app.debug_expand_scroll.saturating_sub(3);
+                                    }
+                                    KeyCode::Down | KeyCode::PageDown => {
+                                        app.debug_expand_scroll += 3;
+                                    }
+                                    _ => {}
+                                }
+                            } else {
+                                // List view key handling
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        app.panel_state = crate::app::PanelState::ControlPanel
+                                    }
+                                    KeyCode::Char('e') | KeyCode::Char('E') => {
+                                        app.debug_filter_errors = !app.debug_filter_errors;
+                                        app.debug_selected_row = 0;
+                                    }
+                                    KeyCode::Char('c') | KeyCode::Char('C') => {
+                                        if let Some(db) = &app.db {
+                                            let _ = db.clear_api_logs();
+                                            app.refresh_debug_logs();
+                                        }
+                                    }
+                                    KeyCode::Char('m') | KeyCode::Char('M') => {
+                                        if let Some(db) = &app.db {
+                                            let _ = db.clear_messages();
+                                            app.messages.clear();
+                                            app.history.clear();
+                                        }
+                                    }
+                                    KeyCode::Up => {
+                                        app.debug_selected_row =
+                                            app.debug_selected_row.saturating_sub(1);
+                                        app.debug_scroll = app.debug_scroll.saturating_sub(1);
+                                    }
+                                    KeyCode::Down => {
+                                        let filtered_logs = app.debug_filtered_logs();
+                                        if app.debug_selected_row
+                                            < filtered_logs.len().saturating_sub(1)
+                                        {
+                                            app.debug_selected_row += 1;
+                                            app.debug_scroll += 1;
+                                        }
+                                    }
+                                    KeyCode::PageUp => {
+                                        app.debug_scroll = app.debug_scroll.saturating_sub(5);
+                                        app.debug_selected_row =
+                                            app.debug_selected_row.saturating_sub(5);
+                                    }
+                                    KeyCode::PageDown => {
+                                        app.debug_scroll += 5;
+                                        let filtered_logs = app.debug_filtered_logs();
+                                        if app.debug_selected_row
+                                            < filtered_logs.len().saturating_sub(1)
+                                        {
+                                            app.debug_selected_row = (app.debug_selected_row + 5)
+                                                .min(filtered_logs.len().saturating_sub(1));
+                                        }
+                                    }
+                                    KeyCode::Enter | KeyCode::Tab => {
+                                        app.toggle_debug_row_expand(app.debug_selected_row);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            continue;
+                        }
+                        crate::app::PanelState::None => {}
                     }
 
                     match key.code {

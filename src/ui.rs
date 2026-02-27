@@ -53,8 +53,15 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     draw_input(app, frame);
     draw_status(app, frame, status_area);
 
-    if app.show_debug {
-        draw_debug_modal(app, frame);
+    // Draw panels
+    match app.panel_state {
+        crate::app::PanelState::None => {}
+        crate::app::PanelState::ControlPanel => {
+            draw_control_panel(app, frame);
+        }
+        crate::app::PanelState::Debug => {
+            draw_debug_modal(app, frame);
+        }
     }
 }
 
@@ -224,6 +231,45 @@ fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {
     (x, y)
 }
 
+fn draw_control_panel(_app: &App, frame: &mut Frame) {
+    let frame_area = frame.area();
+    let modal_width = 40;
+    let modal_height = 8;
+
+    let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
+    let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Control Panel ")
+        .style(Style::default().bg(Color::Black));
+
+    let inner = modal_area.inner(ratatui::layout::Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
+
+    let lines = vec![
+        Line::from(vec![Span::raw("Available Panels:")]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "[D] Debug - API Logs & Performance",
+            Style::default().fg(Color::Cyan),
+        )]),
+    ];
+
+    let text = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    frame.render_widget(block, modal_area);
+    frame.render_widget(text, inner);
+}
+
 fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     let mut left_spans = Vec::new();
 
@@ -319,79 +365,172 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
         height: modal_height,
     };
 
+    let title = if app.debug_expanded_row.is_some() {
+        " Debug: Request Details  [Esc]back "
+    } else {
+        " Debug: API Logs  [↑↓]select  [Enter]expand  [e]rrors  [c]lear logs  [m]clear msgs  [Esc]back "
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Debug: API Logs  [e]rrors-only  [c]lear logs  [m]clear msgs  [Esc]close ")
-        .title_alignment(ratatui::layout::Alignment::Left);
+        .title(title)
+        .title_alignment(ratatui::layout::Alignment::Left)
+        .style(Style::default().bg(Color::Black));
 
     let inner = modal_area.inner(ratatui::layout::Margin {
         vertical: 1,
         horizontal: 1,
     });
 
-    let mut lines = Vec::new();
+    if let Some(expanded_idx) = app.debug_expanded_row {
+        // Expanded view: show full request details
+        let filtered_logs = app.debug_filtered_logs();
+        if let Some(log) = filtered_logs.get(expanded_idx) {
+            let mut lines = Vec::new();
 
-    // Filter logs based on error filter
-    let filtered_logs: Vec<_> = if app.debug_filter_errors {
-        app.debug_logs
-            .iter()
-            .filter(|log| log.error_message.is_some())
-            .collect()
-    } else {
-        app.debug_logs.iter().collect()
-    };
-
-    // Apply scroll offset
-    let visible_logs = filtered_logs
-        .iter()
-        .skip(app.debug_scroll)
-        .take((inner.height as usize).saturating_sub(1));
-
-    for log in visible_logs {
-        let status_icon = if log.error_message.is_some() {
-            Span::styled("✗", Style::default().fg(Color::Red))
-        } else {
-            Span::styled("✓", Style::default().fg(Color::Green))
-        };
-
-        let time_str = log
-            .created_at
-            .split('T')
-            .nth(1)
-            .unwrap_or("")
-            .split('+')
-            .next()
-            .unwrap_or("");
-        let time_span = Span::styled(time_str.to_string(), Style::default().fg(Color::DarkGray));
-
-        let duration_str = format!("{}ms", log.duration_ms.unwrap_or(0));
-        let duration_span = Span::raw(format!("  {}  ", duration_str));
-
-        if let Some(ref err) = log.error_message {
-            let error_text = format!("Error: {}", err);
             lines.push(Line::from(vec![
-                time_span,
-                Span::raw("  "),
-                status_icon,
-                duration_span,
-                Span::styled(error_text, Style::default().fg(Color::Red)),
+                Span::styled("Time: ", Style::default().fg(Color::Cyan)),
+                Span::raw(log.created_at.clone()),
             ]));
-        } else {
-            let truncated_body = if log.request_body.len() > 60 {
-                format!("{}...", &log.request_body[..57])
+            lines.push(Line::from(vec![
+                Span::styled("Duration: ", Style::default().fg(Color::Cyan)),
+                Span::raw(format!("{}ms", log.duration_ms.unwrap_or(0))),
+            ]));
+
+            if let Some(err) = &log.error_message {
+                lines.push(Line::from(vec![
+                    Span::styled("Error: ", Style::default().fg(Color::Red)),
+                    Span::raw(err.clone()),
+                ]));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Request Body:",
+                Style::default().fg(Color::Cyan),
+            )));
+            lines.push(Line::from(""));
+
+            // Pretty-print the JSON
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&log.request_body) {
+                if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+                    for pretty_line in pretty.lines() {
+                        lines.push(Line::from(Span::raw(pretty_line.to_string())));
+                    }
+                }
             } else {
-                log.request_body.clone()
-            };
-            lines.push(Line::from(vec![
-                time_span,
-                Span::raw("  "),
-                status_icon,
-                duration_span,
-                Span::raw(truncated_body),
-            ]));
-        }
-    }
+                lines.push(Line::from(Span::raw(log.request_body.clone())));
+            }
 
-    frame.render_widget(block, modal_area);
-    frame.render_widget(Paragraph::new(lines), inner);
+            // Show response body if available
+            if let Some(response) = &log.response_body {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Response Body:",
+                    Style::default().fg(Color::Cyan),
+                )));
+                lines.push(Line::from(""));
+
+                // Pretty-print response JSON if possible
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(response) {
+                    if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+                        for pretty_line in pretty.lines() {
+                            lines.push(Line::from(Span::raw(pretty_line.to_string())));
+                        }
+                    }
+                } else {
+                    lines.push(Line::from(Span::raw(response.clone())));
+                }
+            }
+
+            // Apply scroll within expanded view
+            let visible_lines: Vec<Line> = lines
+                .into_iter()
+                .skip(app.debug_expand_scroll)
+                .take(inner.height as usize)
+                .collect();
+
+            frame.render_widget(block, modal_area);
+            frame.render_widget(
+                Paragraph::new(visible_lines).style(Style::default().bg(Color::Black)),
+                inner,
+            );
+        }
+    } else {
+        // List view: show all logs with selection highlight
+        let filtered_logs = app.debug_filtered_logs();
+        let mut lines = Vec::new();
+
+        for (idx, log) in filtered_logs.iter().enumerate() {
+            let is_selected = idx == app.debug_selected_row;
+            let status_icon = if log.error_message.is_some() {
+                Span::styled("✗", Style::default().fg(Color::Red))
+            } else {
+                Span::styled("✓", Style::default().fg(Color::Green))
+            };
+
+            let time_str = log
+                .created_at
+                .split('T')
+                .nth(1)
+                .unwrap_or("")
+                .split('+')
+                .next()
+                .unwrap_or("");
+            let time_span =
+                Span::styled(time_str.to_string(), Style::default().fg(Color::DarkGray));
+
+            let duration_str = format!("{}ms", log.duration_ms.unwrap_or(0));
+            let duration_span = Span::raw(format!("  {}  ", duration_str));
+
+            let line_style = if is_selected {
+                Style::default().bg(Color::DarkGray)
+            } else {
+                Style::default()
+            };
+
+            if let Some(ref err) = log.error_message {
+                let error_text = format!("Error: {}", err);
+                lines.push(
+                    Line::from(vec![
+                        time_span,
+                        Span::raw("  "),
+                        status_icon,
+                        duration_span,
+                        Span::styled(error_text, Style::default().fg(Color::Red)),
+                    ])
+                    .style(line_style),
+                );
+            } else {
+                let truncated_body = if log.request_body.len() > 50 {
+                    format!("{}...", &log.request_body[..47])
+                } else {
+                    log.request_body.clone()
+                };
+                lines.push(
+                    Line::from(vec![
+                        time_span,
+                        Span::raw("  "),
+                        status_icon,
+                        duration_span,
+                        Span::raw(truncated_body),
+                    ])
+                    .style(line_style),
+                );
+            }
+        }
+
+        // Apply scroll offset
+        let visible_lines: Vec<Line> = lines
+            .into_iter()
+            .skip(app.debug_scroll)
+            .take(inner.height as usize)
+            .collect();
+
+        frame.render_widget(block, modal_area);
+        frame.render_widget(
+            Paragraph::new(visible_lines).style(Style::default().bg(Color::Black)),
+            inner,
+        );
+    }
 }
