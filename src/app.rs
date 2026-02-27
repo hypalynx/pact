@@ -212,6 +212,14 @@ impl App {
         let available_width = (self.messages_rect.width.saturating_sub(4)) as usize;
 
         for msg in &self.messages {
+            // Account for thinking tokens (if present)
+            if let Some(thinking) = &msg.thinking {
+                let wrapped = wrap_text(thinking, available_width);
+                total_lines += wrapped.len();
+                // Blank line between thinking and response
+                total_lines += 1;
+            }
+            // Account for message text
             let wrapped = wrap_text(&msg.text, available_width);
             total_lines += wrapped.len() + 1; // +1 for blank line after message
         }
