@@ -195,6 +195,7 @@ fn main() -> std::io::Result<()> {
                                     KeyCode::Esc => {
                                         app.debug_expanded_row = None;
                                         app.debug_expand_scroll = 0;
+                                        app.debug_expand_scroll_x = 0;
                                     }
                                     KeyCode::Up | KeyCode::PageUp => {
                                         app.debug_expand_scroll =
@@ -202,6 +203,13 @@ fn main() -> std::io::Result<()> {
                                     }
                                     KeyCode::Down | KeyCode::PageDown => {
                                         app.debug_expand_scroll += 3;
+                                    }
+                                    KeyCode::Left => {
+                                        app.debug_expand_scroll_x =
+                                            app.debug_expand_scroll_x.saturating_sub(5);
+                                    }
+                                    KeyCode::Right => {
+                                        app.debug_expand_scroll_x += 5;
                                     }
                                     _ => {}
                                 }
@@ -340,8 +348,20 @@ fn main() -> std::io::Result<()> {
                 }
                 Event::Mouse(mouse) => {
                     match mouse.kind {
-                        MouseEventKind::ScrollUp => app.scroll_up(),
-                        MouseEventKind::ScrollDown => app.scroll_down(),
+                        MouseEventKind::ScrollUp => {
+                            if app.debug_expanded_row.is_some() {
+                                app.debug_expand_scroll = app.debug_expand_scroll.saturating_sub(1);
+                            } else {
+                                app.scroll_up();
+                            }
+                        }
+                        MouseEventKind::ScrollDown => {
+                            if app.debug_expanded_row.is_some() {
+                                app.debug_expand_scroll += 1;
+                            } else {
+                                app.scroll_down();
+                            }
+                        }
                         MouseEventKind::Down(_) => {
                             let scrollbar_x =
                                 app.messages_rect.x + app.messages_rect.width.saturating_sub(1);

@@ -118,6 +118,8 @@ pub fn call_llm(
         }
     };
 
+    let mut response_blocks: Vec<String> = Vec::new();
+
     let reader = BufReader::new(response);
 
     for line in reader.lines() {
@@ -129,6 +131,7 @@ pub fn call_llm(
             if let Some(data_str) = line.strip_prefix("data: ")
                 && let Ok(json_val) = serde_json::from_str::<serde_json::Value>(data_str)
             {
+                response_blocks.push(data_str.to_string());
                 // Extract delta from OpenAI format: {"choices":[{"delta":{...}}]}
                 let delta_obj = json_val
                     .get("choices")
@@ -245,9 +248,14 @@ pub fn call_llm(
     }
 
     if debug {
+        let response_body = if response_blocks.is_empty() {
+            None
+        } else {
+            Some(response_blocks.join("\n"))
+        };
         let _ = tx.send(LlmEvent::ApiLog {
             request_body,
-            response_body: None,
+            response_body,
             duration_ms: start_time.elapsed().as_millis() as u64,
             error_message: None,
         });

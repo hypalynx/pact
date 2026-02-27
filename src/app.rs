@@ -58,6 +58,7 @@ pub struct App {
     pub debug_selected_row: usize,
     pub debug_expanded_row: Option<usize>,
     pub debug_expand_scroll: usize,
+    pub debug_expand_scroll_x: usize,
 }
 
 impl App {
@@ -123,6 +124,7 @@ impl App {
             debug_selected_row: 0,
             debug_expanded_row: None,
             debug_expand_scroll: 0,
+            debug_expand_scroll_x: 0,
         }
     }
 
@@ -531,9 +533,11 @@ impl App {
         if self.debug_expanded_row == Some(row_idx) {
             self.debug_expanded_row = None;
             self.debug_expand_scroll = 0;
+            self.debug_expand_scroll_x = 0;
         } else {
             self.debug_expanded_row = Some(row_idx);
             self.debug_expand_scroll = 0;
+            self.debug_expand_scroll_x = 0;
         }
     }
 }

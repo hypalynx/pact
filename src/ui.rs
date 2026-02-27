@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 
 fn parse_color(color_str: &str) -> Color {
@@ -431,15 +431,21 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
                 )));
                 lines.push(Line::from(""));
 
-                // Pretty-print response JSON if possible
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(response) {
-                    if let Ok(pretty) = serde_json::to_string_pretty(&json) {
-                        for pretty_line in pretty.lines() {
-                            lines.push(Line::from(Span::raw(pretty_line.to_string())));
+                // Pretty-print response JSON - handle SSE format (multiple JSON blocks)
+                for line in response.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("data: ") {
+                        let json_str = trimmed.strip_prefix("data: ").unwrap_or(trimmed);
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+                                for pretty_line in pretty.lines() {
+                                    lines.push(Line::from(Span::raw(pretty_line.to_string())));
+                                }
+                                continue;
+                            }
                         }
                     }
-                } else {
-                    lines.push(Line::from(Span::raw(response.clone())));
+                    lines.push(Line::from(Span::raw(line.to_string())));
                 }
             }
 
@@ -451,8 +457,11 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
                 .collect();
 
             frame.render_widget(block, modal_area);
+            frame.render_widget(Clear::default(), inner);
             frame.render_widget(
-                Paragraph::new(visible_lines).style(Style::default().bg(Color::Black)),
+                Paragraph::new(visible_lines)
+                    .style(Style::default().bg(Color::Black))
+                    .scroll((0, app.debug_expand_scroll_x as u16)),
                 inner,
             );
         }
@@ -528,6 +537,7 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
             .collect();
 
         frame.render_widget(block, modal_area);
+        frame.render_widget(Clear::default(), inner);
         frame.render_widget(
             Paragraph::new(visible_lines).style(Style::default().bg(Color::Black)),
             inner,
