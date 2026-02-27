@@ -2,15 +2,20 @@
 
 ## Quick Reference: What's Next
 
-### Current Focus: Communication & Debugging (Feb 26, 2026)
-**Priority:** Get protocol communication rock-solid before expanding tool support
+### ✅ Phase 0: Communication Protocol (COMPLETED Feb 27, 2026)
+- ✅ Switched endpoint to `/v1/chat/completions` (OpenAI format)
+- ✅ Fixed system message handling (dedicated role: system)
+- ✅ Fixed token field names (prompt_tokens/completion_tokens)
+- ✅ Added reasoning_content streaming (`LlmEvent::Thinking`)
+- ✅ Kept both tool call parsers (Qwen text format + OpenAI structured)
+- ✅ Improved tool descriptions and renamed path → filePath
 
-1. **Communication Protocol Improvements**
-   - [ ] Improve tool descriptions (opencode sends 8-11, pact sends minimal)
-   - [ ] Better message formatting (both sent and received)
-   - [ ] Process reasoning/thinking tokens from models
-   - [ ] Refactor system message handling (dedicated system message vs prepend)
-   - [ ] Message content array format `[{"type": "text", "text": "..."}]`
+### Current Focus: Communication & Debugging (Feb 27, 2026)
+**Priority:** Now implementing debug/logging infrastructure and UI rendering
+
+1. **Remaining Communication Tasks**
+   - [ ] Render thinking tokens in UI (dimmed/grey, inline before response)
+   - [ ] Message content array format `[{"type": "text", "text": "..."}]` (optional, low priority)
 
 2. **Debug Infrastructure**
    - [ ] Add debug UI inside pact (accessible from control panel)
@@ -21,6 +26,20 @@
    - [ ] Move from JSON (`messages.json`) to SQLite
    - [ ] Store debug logs in SQLite (with timestamps, type filtering)
    - [ ] Control panel for managing stored data
+
+4. **Other tasks**
+   - [ ] Read user AGENTS.md and AGENTS.md for files in projects
+   - [ ] make sure that.. temperature: null isn't being sent if
+     the value is null.
+   - [ ] message queuing.. should saying "queued" if a message
+     has been submitted but not submitted to be processed by
+     llama.cpp.
+
+5. **Start writing tests for the parser**
+
+  - [ ] tool_call blocks
+  - [ ] thinking blocks
+  - [ ] ..markdown? I don't know
 
 ---
 

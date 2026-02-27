@@ -18,6 +18,7 @@ pub struct App {
     pub tx: mpsc::Sender<LlmEvent>,
     pub loading: bool,
     pub pending_response: String,
+    pub pending_thinking: String,
     pub debug: bool,
     pub scroll_offset: usize,
     pub user_scrolled: bool,
@@ -66,6 +67,7 @@ impl App {
             tx,
             loading: false,
             pending_response: String::new(),
+            pending_thinking: String::new(),
             debug,
             scroll_offset: 0,
             user_scrolled: false,
@@ -110,6 +112,7 @@ impl App {
                 role: m.role.clone(),
                 text: m.text.clone(),
                 is_tool_result: false,
+                thinking: None,
             })
             .collect();
         let content = serde_json::to_string_pretty(&messages)?;
@@ -126,6 +129,7 @@ impl App {
             role: "user".to_string(),
             text: text.clone(),
             is_tool_result: false,
+            thinking: None,
         });
         self.history_index = None;
         self.save_history().ok();

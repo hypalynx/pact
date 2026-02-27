@@ -12,10 +12,13 @@ pub struct Message {
     pub text: String,
     #[serde(default)]
     pub is_tool_result: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
 }
 
 pub enum LlmEvent {
     Token(String),
+    Thinking(String),
     Done,
     Error(String),
     Usage {
@@ -50,13 +53,9 @@ pub fn call_llm(
 
     let mut msg_payload: Vec<_> = Vec::new();
 
-    // Add tools availability note as first user message with explicit format instruction
-    let tools_note = "You have access to a 'read' tool to examine files. When you need to read a file, output ONLY this JSON (no other text):\n\n{\"tool_calls\": [{\"index\": 0, \"id\": \"read\", \"type\": \"function\", \"function\": {\"name\": \"read\", \"arguments\": \"{\\\"path\\\": \\\"/absolute/path/to/file\\\"}\"}}}}\n\nOnce you receive the file contents, respond normally with your analysis or findings. For file paths, always use absolute paths.";
-    msg_payload.push(json!({ "role": "user", "content": tools_note }));
-
-    // Prepend mode prompt as second user message if present
+    // Add system prompt as proper system message if present
     if let Some(prompt) = system_prompt {
-        msg_payload.push(json!({ "role": "user", "content": prompt }));
+        msg_payload.push(json!({ "role": "system", "content": prompt }));
     }
 
     // Add conversation messages
@@ -70,6 +69,10 @@ pub fn call_llm(
         "stream": true,
         "messages": msg_payload,
         "tools": tools::get_tool_definitions(),
+        "tool_choice": "auto",
+        "stream_options": {
+            "include_usage": true
+        }
     });
 
     if let Some(temp) = temperature {
@@ -83,7 +86,7 @@ pub fn call_llm(
             .open("api.log")
             .and_then(|mut file| {
                 writeln!(file, "=== REQUEST {} ===", chrono::Local::now())?;
-                writeln!(file, "POST {}/v1/messages", endpoint)?;
+                writeln!(file, "POST {}/v1/chat/completions", endpoint)?;
                 writeln!(
                     file,
                     "{}",
@@ -95,7 +98,7 @@ pub fn call_llm(
     }
 
     let response = match client
-        .post(format!("{}/v1/messages", endpoint))
+        .post(format!("{}/v1/chat/completions", endpoint))
         .json(&body)
         .send()
     {
@@ -143,13 +146,13 @@ pub fn call_llm(
                     );
                 }
 
-                // Check for text tokens
+                // Check for text tokens (content field for OpenAI format)
                 if let Some(delta) = json_val
                     .get("delta")
-                    .and_then(|d| d.get("text"))
+                    .and_then(|d| d.get("content"))
                     .and_then(|t| t.as_str())
                 {
-                    // Check if this contains a tool call
+                    // Check if this contains a tool call (for Qwen and text-format models)
                     if delta.contains("<tool_call>") {
                         // Parse tool call from text format
                         if let Some(tool_json_start) = delta.find('{')
@@ -166,20 +169,22 @@ pub fn call_llm(
                                     .to_string();
                                 let mut args = serde_json::Map::new();
 
-                                // Handle both "file" and "path" parameter names
-                                if let Some(file_arg) =
-                                    tool_json.get("arguments").and_then(|a| a.get("file"))
+                                // Handle arguments - normalize parameter names to filePath
+                                if let Some(arguments) =
+                                    tool_json.get("arguments").and_then(|a| a.as_object())
                                 {
-                                    args.insert("path".to_string(), file_arg.clone());
-                                }
-                                if let Some(path_arg) =
-                                    tool_json.get("arguments").and_then(|a| a.get("path"))
-                                {
-                                    args.insert("path".to_string(), path_arg.clone());
+                                    for (key, value) in arguments {
+                                        if key == "path" || key == "file" || key == "filePath" {
+                                            // Normalize file parameter to filePath
+                                            args.insert("filePath".to_string(), value.clone());
+                                        } else {
+                                            args.insert(key.clone(), value.clone());
+                                        }
+                                    }
                                 }
 
-                                // If name is empty but we have path arg, infer it's a "read" tool
-                                if name.is_empty() && args.contains_key("path") {
+                                // If name is empty but we have filePath arg, infer it's a "read" tool
+                                if name.is_empty() && args.contains_key("filePath") {
                                     name = "read".to_string();
                                 }
 
@@ -193,6 +198,15 @@ pub fn call_llm(
                         // Regular text token
                         let _ = tx.send(LlmEvent::Token(delta.to_string()));
                     }
+                }
+
+                // Check for reasoning/thinking tokens
+                if let Some(thinking) = json_val
+                    .get("delta")
+                    .and_then(|d| d.get("reasoning_content"))
+                    .and_then(|t| t.as_str())
+                {
+                    let _ = tx.send(LlmEvent::Thinking(thinking.to_string()));
                 }
 
                 // Check for tool calls in delta
@@ -229,14 +243,14 @@ pub fn call_llm(
                     }
                 }
 
-                // Check for usage
+                // Check for usage (OpenAI format: prompt_tokens, completion_tokens)
                 if let Some(usage) = json_val.get("usage") {
                     let input_tokens = usage
-                        .get("input_tokens")
+                        .get("prompt_tokens")
                         .and_then(|t| t.as_u64())
                         .unwrap_or(0) as usize;
                     let output_tokens = usage
-                        .get("output_tokens")
+                        .get("completion_tokens")
                         .and_then(|t| t.as_u64())
                         .unwrap_or(0) as usize;
 

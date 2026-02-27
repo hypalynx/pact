@@ -61,12 +61,27 @@ fn main() -> std::io::Result<()> {
                         app.scroll_offset = new_line_count.saturating_sub(height);
                     }
                 }
+                llm::LlmEvent::Thinking(t) => {
+                    // Accumulate thinking tokens separately
+                    app.pending_thinking.push_str(&t);
+                    if !app.user_scrolled {
+                        let new_line_count = app.calculate_total_lines();
+                        let height = app.messages_rect.height as usize;
+                        app.scroll_offset = new_line_count.saturating_sub(height);
+                    }
+                }
                 llm::LlmEvent::Done => {
                     let text = std::mem::take(&mut app.pending_response);
+                    let thinking = if app.pending_thinking.is_empty() {
+                        None
+                    } else {
+                        Some(std::mem::take(&mut app.pending_thinking))
+                    };
                     app.messages.push(llm::Message {
                         role: "assistant".to_string(),
                         text,
                         is_tool_result: false,
+                        thinking,
                     });
                     app.loading = false;
                     if !app.user_scrolled {
@@ -81,6 +96,7 @@ fn main() -> std::io::Result<()> {
                         role: "assistant".to_string(),
                         text,
                         is_tool_result: false,
+                        thinking: None,
                     });
                     app.loading = false;
                     if !app.user_scrolled {
@@ -103,6 +119,7 @@ fn main() -> std::io::Result<()> {
                         role: "user".to_string(),
                         text: result,
                         is_tool_result: true,
+                        thinking: None,
                     });
                     app.send_to_llm();
                 }

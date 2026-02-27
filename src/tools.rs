@@ -15,16 +15,17 @@ pub fn get_tool_definitions() -> Vec<Value> {
         "type": "function",
         "function": {
             "name": "read",
-            "description": "Read file contents from disk. Use this to examine code, configuration, documentation, and understand the context you're working with.",
+            "description": "Read the complete contents of a file at an absolute path. Returns the raw text content. Files larger than 64KB are truncated at the limit with a warning. Use this to examine source code, configs, README files, and any other text content.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {
+                    "filePath": {
                         "type": "string",
-                        "description": "Absolute file path to read"
+                        "description": "Absolute path to the file to read (must start with /)"
                     }
                 },
-                "required": ["path"]
+                "required": ["filePath"],
+                "additionalProperties": false
             }
         }
     })]
@@ -38,9 +39,9 @@ pub fn execute_tool(tool_call: &ToolCall) -> String {
 }
 
 fn execute_read(args: &serde_json::Map<String, Value>) -> String {
-    let path = match args.get("path").and_then(|v| v.as_str()) {
+    let path = match args.get("filePath").and_then(|v| v.as_str()) {
         Some(p) => p,
-        None => return "Error: 'path' parameter is required and must be a string".to_string(),
+        None => return "Error: 'filePath' parameter is required and must be a string".to_string(),
     };
 
     // Validate path is absolute
