@@ -25,6 +25,42 @@ fn parse_color(color_str: &str) -> Color {
     }
 }
 
+fn highlight_line_range(line: Line<'static>, char_start: usize, char_end: usize) -> Line<'static> {
+    let mut new_spans = Vec::new();
+    let mut pos = 0;
+    let highlight_style = Style::default().bg(Color::Blue);
+
+    for span in line.spans {
+        let span_len = span.content.chars().count();
+        let span_end = pos + span_len;
+
+        if span_end <= char_start || pos >= char_end {
+            // Span is completely before or after the selection
+            new_spans.push(span);
+        } else {
+            // Span overlaps with selection - split it
+            let span_chars: Vec<char> = span.content.chars().collect();
+
+            for (current_pos, ch) in span_chars.iter().enumerate() {
+                let char_pos = pos + current_pos;
+
+                if char_pos >= char_start && char_pos < char_end {
+                    // Char is in selection range
+                    let highlighted_style = span.style.patch(highlight_style);
+                    new_spans.push(Span::styled(ch.to_string(), highlighted_style));
+                } else {
+                    // Char is not in selection range
+                    new_spans.push(Span::styled(ch.to_string(), span.style));
+                }
+            }
+        }
+
+        pos = span_end;
+    }
+
+    Line::from(new_spans)
+}
+
 pub fn draw_app(app: &mut App, frame: &mut Frame) {
     let margin = ratatui::layout::Margin::new(1, 1);
     let area = frame.area().inner(margin);
@@ -65,8 +101,9 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     }
 }
 
-fn draw_messages(app: &App, frame: &mut Frame) {
+fn draw_messages(app: &mut App, frame: &mut Frame) {
     let mut lines = Vec::new();
+    let mut text_lines = Vec::new();
     let available_width = (app.messages_rect.width.saturating_sub(4)) as usize;
 
     for msg in &app.messages {
@@ -76,6 +113,7 @@ fn draw_messages(app: &App, frame: &mut Frame) {
                 let padded = format!("  {}  ", msg.text);
                 let style = Style::default().fg(Color::DarkGray).italic();
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
+                text_lines.push(msg.text.clone());
             } else {
                 // Regular user message
                 let wrapped = wrap_text(&msg.text, available_width);
@@ -83,6 +121,7 @@ fn draw_messages(app: &App, frame: &mut Frame) {
                     let padded = format!("  {}  ", line_text);
                     let style = Style::default().bg(Color::Black);
                     lines.push(Line::from(vec![Span::styled(padded, style)]));
+                    text_lines.push(line_text);
                 }
             }
         } else {
@@ -93,18 +132,22 @@ fn draw_messages(app: &App, frame: &mut Frame) {
                     let style = Style::default().fg(Color::DarkGray).italic();
                     let padded = format!("  {}  ", line_text);
                     lines.push(Line::from(vec![Span::styled(padded, style)]));
+                    text_lines.push(line_text);
                 }
                 // Empty line between thinking and response
                 lines.push(Line::from(""));
+                text_lines.push(String::new());
             }
             // Render main response text
             let wrapped = wrap_text(&msg.text, available_width);
             for line_text in wrapped {
                 let spans = parse_markdown_line(&line_text);
                 lines.push(Line::from(spans));
+                text_lines.push(line_text);
             }
         }
         lines.push(Line::from(""));
+        text_lines.push(String::new());
     }
 
     // Render pending thinking tokens (while streaming)
@@ -114,10 +157,12 @@ fn draw_messages(app: &App, frame: &mut Frame) {
             let style = Style::default().fg(Color::DarkGray).italic();
             let padded = format!("  {}  ", line_text);
             lines.push(Line::from(vec![Span::styled(padded, style)]));
+            text_lines.push(line_text);
         }
         // Empty line between thinking and response
         if !app.pending_response.is_empty() {
             lines.push(Line::from(""));
+            text_lines.push(String::new());
         }
     }
 
@@ -127,18 +172,65 @@ fn draw_messages(app: &App, frame: &mut Frame) {
         for line_text in wrapped {
             let spans = parse_markdown_line(&line_text);
             lines.push(Line::from(spans));
+            text_lines.push(line_text);
         }
     }
+
+    // Store the text lines for selection extraction
+    app.all_line_texts = text_lines;
 
     let line_count = lines.len() as u16;
     let max_scroll = line_count.saturating_sub(app.messages_rect.height);
     let start_line = (app.scroll_offset as u16).min(max_scroll);
 
-    let visible_lines: Vec<Line> = lines
-        .into_iter()
-        .skip(start_line as usize)
-        .take(app.messages_rect.height as usize)
-        .collect();
+    // Apply selection highlighting if selection is active
+    let visible_lines: Vec<Line> = if let (Some(sel_start), Some(sel_end)) = (app.selection_start, app.selection_end) {
+        let min_row = sel_start.1.min(sel_end.1);
+        let max_row = sel_start.1.max(sel_end.1);
+        let (col_start, col_end) = if sel_start.1 < sel_end.1 || (sel_start.1 == sel_end.1 && sel_start.0 <= sel_end.0) {
+            (sel_start.0, sel_end.0)
+        } else {
+            (sel_end.0, sel_start.0)
+        };
+
+        let pad = 2usize;
+        let text_col_start = (col_start as usize).saturating_sub(app.messages_rect.x as usize + pad);
+        let text_col_end = (col_end as usize).saturating_sub(app.messages_rect.x as usize + pad);
+
+        lines
+            .into_iter()
+            .enumerate()
+            .skip(start_line as usize)
+            .take(app.messages_rect.height as usize)
+            .map(|(full_idx, line)| {
+                let vis_idx = full_idx - (start_line as usize);
+                let screen_row = app.messages_rect.y + vis_idx as u16;
+
+                if screen_row < min_row || screen_row > max_row {
+                    line
+                } else if min_row == max_row {
+                    // Single line selection
+                    highlight_line_range(line, text_col_start, text_col_end)
+                } else if screen_row == min_row {
+                    // First line of multi-line selection
+                    highlight_line_range(line, text_col_start, usize::MAX)
+                } else if screen_row == max_row {
+                    // Last line of multi-line selection
+                    highlight_line_range(line, 0, text_col_end)
+                } else {
+                    // Middle line - highlight entire line
+                    let highlight_style = Style::default().bg(Color::Blue);
+                    line.style(highlight_style)
+                }
+            })
+            .collect()
+    } else {
+        lines
+            .into_iter()
+            .skip(start_line as usize)
+            .take(app.messages_rect.height as usize)
+            .collect()
+    };
 
     frame.render_widget(Paragraph::new(visible_lines), app.messages_rect);
 

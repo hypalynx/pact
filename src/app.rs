@@ -57,6 +57,7 @@ pub struct App {
     pub debug_expand_scroll: usize,
     pub debug_expand_scroll_x: usize,
     pub progress: Option<f32>,
+    pub all_line_texts: Vec<String>,
 }
 
 impl App {
@@ -123,6 +124,7 @@ impl App {
             debug_expand_scroll: 0,
             debug_expand_scroll_x: 0,
             progress: None,
+            all_line_texts: Vec::new(),
         }
     }
 
@@ -453,9 +455,9 @@ impl App {
     }
 
     fn extract_selected_text(&self) -> Option<String> {
-        let (start, _end) = match (self.selection_start, self.selection_end) {
+        let (start, end) = match (self.selection_start, self.selection_end) {
             (Some(s), Some(e)) => {
-                if s <= e {
+                if s.1 < e.1 || (s.1 == e.1 && s.0 <= e.0) {
                     (s, e)
                 } else {
                     (e, s)
@@ -464,22 +466,52 @@ impl App {
             _ => return None,
         };
 
-        // Simple extraction: collect all message text
-        let mut all_text = String::new();
-        for msg in &self.messages {
-            all_text.push_str(&msg.text);
-            all_text.push('\n');
-        }
-        if !self.pending_response.is_empty() {
-            all_text.push_str(&self.pending_response);
+        if self.all_line_texts.is_empty() {
+            return None;
         }
 
-        // Rough approximation: extract by line
-        // This is a simplified version - in reality we'd need to map screen coords to text
-        if all_text.len() > (start.0 as usize) {
-            Some(all_text)
-        } else {
+        // Compute scroll offset → full array index mapping
+        let line_count = self.all_line_texts.len() as u16;
+        let max_scroll = line_count.saturating_sub(self.messages_rect.height);
+        let start_line = (self.scroll_offset as u16).min(max_scroll) as usize;
+
+        // Screen row → full array index
+        let vis_start = start.1.saturating_sub(self.messages_rect.y) as usize;
+        let vis_end = end.1.saturating_sub(self.messages_rect.y) as usize;
+        let idx_start = (vis_start + start_line).min(self.all_line_texts.len().saturating_sub(1));
+        let idx_end = (vis_end + start_line).min(self.all_line_texts.len().saturating_sub(1));
+
+        // Column → text char offset (subtract left padding of 2)
+        let text_x = self.messages_rect.x;
+        let pad = 2usize;
+        let col_start = (start.0 as usize).saturating_sub(text_x as usize + pad);
+        let col_end = (end.0 as usize).saturating_sub(text_x as usize + pad);
+
+        let mut parts = Vec::new();
+        for idx in idx_start..=idx_end {
+            let line = &self.all_line_texts[idx];
+            let char_count = line.chars().count();
+
+            let (cs, ce) = if idx == idx_start && idx == idx_end {
+                (col_start.min(char_count), col_end.min(char_count))
+            } else if idx == idx_start {
+                (col_start.min(char_count), char_count)
+            } else if idx == idx_end {
+                (0, col_end.min(char_count))
+            } else {
+                (0, char_count)
+            };
+
+            // Slice by char index (safe for multibyte chars)
+            let sliced: String = line.chars().skip(cs).take(ce.saturating_sub(cs)).collect();
+            parts.push(sliced);
+        }
+
+        let selected = parts.join("\n");
+        if selected.trim().is_empty() {
             None
+        } else {
+            Some(selected)
         }
     }
 
