@@ -4,22 +4,17 @@
 
 Items raised in this session that still need completion:
 
-2. **Selection highlighting in UI** - When text is selected and copied to clipboard, visually highlight the selected text area in the message display (currently just shows "Copied to clipboard!" message). This requires refactoring the text rendering to track and display selected character ranges.
+1. **Selection highlighting in UI** - When text is selected and copied to clipboard, visually highlight the selected text area in the message display (currently just shows "Copied to clipboard!" message). This requires refactoring the text rendering to track and display selected character ranges.
 
-3. **Progress bar for LLM generation** - Llama.cpp sends progress data in streaming responses (e.g., `progress = 0.724581`). Need to:
-   - Check if progress field is in the SSE streaming responses
-   - Parse progress percentage from API responses
-   - Display a progress indicator (could be percentage or progress bar) in the UI while LLM is generating
-
-4. **Out-of-order messages** - User saw some weird message ordering. Need to investigate once scroll is confirmed working to see what messages are appearing out of order.
-
-5. **Loading animation across multiple API calls** - Made change to clear `pending_thinking` in `send_to_llm()` to ensure loading spinner shows for subsequent requests (after tool execution). Need to verify the animation stays active for the full tool execution → LLM response cycle.
+2. **Out-of-order messages** - User saw some weird message ordering. Need to investigate to see what messages are appearing out of order.
 
 ---
 
 ## Completed This Session
 
 - ✅ Scroll verification - Fixed `calculate_total_lines()` to account for thinking tokens in messages (was only counting pending_thinking, not message.thinking)
+- ✅ Progress bar for LLM generation - Added Progress event, parse progress from SSE responses, display as percentage in status bar (e.g., "60%") while loading
+- ✅ Loading animation across multiple API calls - Verified loading stays true during full tool execution → LLM response cycle. `send_to_llm()` clears pending response/thinking, keeps loading=true
 - ✅ Tool call streaming argument accumulation - Fixed SSE events that stream tool call arguments as JSON fragments
 - ✅ File read tool execution - Tool calls now properly execute and send results back to LLM
 - ✅ Fresh session on startup - Messages load from SQLite for history/debug, but chat starts fresh
@@ -80,6 +75,7 @@ Items raised in this session that still need completion:
    - [ ] allow ctrl + z to suspend the program (check if this is
      a good thing i.e will we still receive input from the LLM?
      lol)
+   - [ ] markdown doesn't process single *formatting* as italic.
 
 5. **Start writing tests for the parser**
 

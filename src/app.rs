@@ -56,6 +56,7 @@ pub struct App {
     pub debug_expanded_row: Option<usize>,
     pub debug_expand_scroll: usize,
     pub debug_expand_scroll_x: usize,
+    pub progress: Option<f32>,
 }
 
 impl App {
@@ -121,6 +122,7 @@ impl App {
             debug_expanded_row: None,
             debug_expand_scroll: 0,
             debug_expand_scroll_x: 0,
+            progress: None,
         }
     }
 
@@ -135,6 +137,7 @@ impl App {
             text: text.clone(),
             is_tool_result: false,
             thinking: None,
+            tool_result_content: None,
         };
         self.messages.push(msg.clone());
         self.history_index = None;

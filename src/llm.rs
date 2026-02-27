@@ -13,11 +13,14 @@ pub struct Message {
     pub is_tool_result: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_result_content: Option<String>,
 }
 
 pub enum LlmEvent {
     Token(String),
     Thinking(String),
+    Progress(f32),
     Done,
     Error(String),
     Usage {
@@ -78,7 +81,13 @@ pub fn call_llm(
 
     // Add conversation messages
     for m in messages {
-        msg_payload.push(json!({ "role": m.role, "content": m.text }));
+        // For tool results, send the actual content instead of the summary
+        let content = if m.is_tool_result {
+            m.tool_result_content.as_deref().unwrap_or(&m.text)
+        } else {
+            &m.text
+        };
+        msg_payload.push(json!({ "role": m.role, "content": content }));
     }
 
     let mut body = json!({
@@ -286,6 +295,11 @@ pub fn call_llm(
                         output_tokens,
                     });
                 }
+            }
+
+            // Check for progress (llama.cpp extension)
+            if let Some(progress) = json_val.get("progress").and_then(|p| p.as_f64()) {
+                let _ = tx.send(LlmEvent::Progress(progress as f32));
             }
         }
     }

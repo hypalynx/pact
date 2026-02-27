@@ -124,6 +124,7 @@ impl Db {
                 text: row.get(1)?,
                 is_tool_result: row.get::<_, i64>(2)? != 0,
                 thinking: row.get(3)?,
+                tool_result_content: None,
             })
         })?;
 

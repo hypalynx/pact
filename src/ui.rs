@@ -72,21 +72,8 @@ fn draw_messages(app: &App, frame: &mut Frame) {
     for msg in &app.messages {
         if msg.role == "user" {
             if msg.is_tool_result {
-                // For tool results, show a brief summary instead of full content
-                // Try to extract file path and show filename
-                let display_text = if let Some(path_start) = msg.text.find("'") {
-                    if let Some(path_end) = msg.text[path_start + 1..].find('\'') {
-                        let file_path = &msg.text[path_start + 1..path_start + 1 + path_end];
-                        // Extract just the filename from the path
-                        let filename = file_path.split('/').next_back().unwrap_or(file_path);
-                        format!("Reading {}", filename)
-                    } else {
-                        "Reading file...".to_string()
-                    }
-                } else {
-                    "Tool result processed".to_string()
-                };
-                let padded = format!("  {}  ", display_text);
+                // Tool results already contain a brief summary (e.g., "Reading config.yaml")
+                let padded = format!("  {}  ", msg.text);
                 let style = Style::default().fg(Color::DarkGray).italic();
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
             } else {
@@ -334,6 +321,16 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
                 braille.to_string(),
                 Style::default().fg(Color::DarkGray),
             ));
+
+            // Show progress percentage if available
+            if let Some(progress) = app.progress {
+                let percentage = (progress * 100.0) as u32;
+                left_spans.push(Span::raw(" "));
+                left_spans.push(Span::styled(
+                    format!("{}%", percentage),
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
         }
     }
 

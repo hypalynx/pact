@@ -94,6 +94,7 @@ fn main() -> std::io::Result<()> {
                         text,
                         is_tool_result: false,
                         thinking,
+                        tool_result_content: None,
                     };
                     app.messages.push(msg.clone());
                     // Save assistant message to database if available
@@ -101,6 +102,7 @@ fn main() -> std::io::Result<()> {
                         let _ = db.save_message(&msg);
                     }
                     app.loading = false;
+                    app.progress = None;
                     if !app.user_scrolled {
                         let new_line_count = app.calculate_total_lines();
                         let height = app.messages_rect.height as usize;
@@ -114,8 +116,10 @@ fn main() -> std::io::Result<()> {
                         text,
                         is_tool_result: false,
                         thinking: None,
+                        tool_result_content: None,
                     });
                     app.loading = false;
+                    app.progress = None;
                     if !app.user_scrolled {
                         let new_line_count = app.calculate_total_lines();
                         let height = app.messages_rect.height as usize;
@@ -131,14 +135,18 @@ fn main() -> std::io::Result<()> {
                 }
                 llm::LlmEvent::ToolCall { name, args } => {
                     let tool_call = tools::ToolCall { name, args };
-                    let result = tools::execute_tool(&tool_call);
+                    let (summary, content) = tools::execute_tool(&tool_call);
                     app.messages.push(llm::Message {
                         role: "user".to_string(),
-                        text: result,
+                        text: summary,
                         is_tool_result: true,
                         thinking: None,
+                        tool_result_content: Some(content),
                     });
                     app.send_to_llm();
+                }
+                llm::LlmEvent::Progress(p) => {
+                    app.progress = Some(p);
                 }
                 llm::LlmEvent::ApiLog {
                     request_body,
