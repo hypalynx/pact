@@ -3,8 +3,6 @@ use crate::llm::{LlmEvent, Message};
 use crate::text::wrap_text;
 use indexmap::IndexMap;
 use ratatui::layout::Rect;
-use std::fs;
-use std::io;
 use std::sync::mpsc;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,7 +48,6 @@ pub struct App {
     pub selection_end: Option<(u16, u16)>,
     pub last_copy_frame: u32,
     pub error_message: Option<String>,
-    pub error_frame: u32,
     pub panel_state: PanelState,
     pub debug_scroll: usize,
     pub debug_filter_errors: bool,
@@ -116,7 +113,6 @@ impl App {
             selection_end: None,
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
             error_message: db_error,
-            error_frame: 0,
             panel_state: PanelState::None,
             debug_scroll: 0,
             debug_filter_errors: false,
@@ -126,33 +122,6 @@ impl App {
             debug_expand_scroll: 0,
             debug_expand_scroll_x: 0,
         }
-    }
-
-    pub fn load_history() -> io::Result<Vec<String>> {
-        let path = crate::utils::messages_path();
-        if !path.exists() {
-            return Ok(Vec::new());
-        }
-        let content = fs::read_to_string(path)?;
-        let messages: Vec<Message> = serde_json::from_str(&content).unwrap_or_default();
-        Ok(messages.into_iter().map(|m| m.text).collect())
-    }
-
-    pub fn save_history(&self) -> io::Result<()> {
-        let path = crate::utils::messages_path();
-        let messages: Vec<Message> = self
-            .messages
-            .iter()
-            .filter(|m| m.role == "user" && !m.is_tool_result)
-            .map(|m| Message {
-                role: m.role.clone(),
-                text: m.text.clone(),
-                is_tool_result: false,
-                thinking: None,
-            })
-            .collect();
-        let content = serde_json::to_string_pretty(&messages)?;
-        fs::write(path, content)
     }
 
     pub fn submit_message(&mut self) {
@@ -181,6 +150,7 @@ impl App {
     pub fn send_to_llm(&mut self) {
         self.loading = true;
         self.pending_response.clear();
+        self.pending_thinking.clear();
         self.user_scrolled = false;
 
         let messages = self.messages.clone();
@@ -213,7 +183,7 @@ impl App {
         }
         let new_index = match self.history_index {
             None => self.history.len() - 1,
-            Some(i) if i == 0 => return,
+            Some(0) => return,
             Some(i) => i - 1,
         };
         self.history_index = Some(new_index);
@@ -243,9 +213,20 @@ impl App {
 
         for msg in &self.messages {
             let wrapped = wrap_text(&msg.text, available_width);
-            total_lines += wrapped.len() + 1;
+            total_lines += wrapped.len() + 1; // +1 for blank line after message
         }
 
+        // Account for pending thinking tokens (if streaming)
+        if !self.pending_thinking.is_empty() {
+            let wrapped = wrap_text(&self.pending_thinking, available_width);
+            total_lines += wrapped.len();
+            // Add blank line between thinking and response if response is present
+            if !self.pending_response.is_empty() {
+                total_lines += 1;
+            }
+        }
+
+        // Account for pending response tokens (if streaming)
         if !self.pending_response.is_empty() {
             let wrapped = wrap_text(&self.pending_response, available_width);
             total_lines += wrapped.len();
@@ -446,14 +427,15 @@ impl App {
             }
 
             // Extract text and copy to clipboard
-            if let Some(text) = self.extract_selected_text() {
-                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                    if clipboard.set_text(text).is_ok() {
-                        self.last_copy_frame = self.frame_count;
-                    }
-                    // Silently fail on clipboard errors - don't corrupt TUI with stderr
-                }
+            if let Some(text) = self.extract_selected_text()
+                && let Ok(mut clipboard) = arboard::Clipboard::new()
+                && clipboard.set_text(text).is_ok()
+            {
+                self.last_copy_frame = self.frame_count;
+                // Keep clipboard object alive for a bit longer to ensure clipboard managers have time to read
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
+            // Silently fail on clipboard errors - don't corrupt TUI with stderr
             self.selection_start = None;
             self.selection_end = None;
         }
@@ -505,16 +487,17 @@ impl App {
         }
     }
 
-    pub fn load_messages_from_db(&mut self) {
-        if let Some(db) = &self.db {
-            if let Ok(msgs) = db.load_messages() {
-                self.history = msgs
-                    .iter()
-                    .filter(|m| m.role == "user" && !m.is_tool_result)
-                    .map(|m| m.text.clone())
-                    .collect();
-                self.messages = msgs;
-            }
+    pub fn load_history_from_db(&mut self) {
+        if let Some(db) = &self.db
+            && let Ok(msgs) = db.load_messages()
+        {
+            // Only load user message texts for history (for up/down arrow navigation)
+            // Don't load messages into the chat display
+            self.history = msgs
+                .iter()
+                .filter(|m| m.role == "user" && !m.is_tool_result)
+                .map(|m| m.text.clone())
+                .collect();
         }
     }
 

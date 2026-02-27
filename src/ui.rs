@@ -31,7 +31,7 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
 
     let input_lines =
         (app.input.lines().count() + if app.input.ends_with('\n') { 1 } else { 0 }).max(1) as u16;
-    let input_height = (input_lines + 2).min(10).max(3);
+    let input_height = (input_lines + 2).clamp(3, 10);
 
     let vertical = Layout::vertical([
         Constraint::Min(3),
@@ -71,15 +71,32 @@ fn draw_messages(app: &App, frame: &mut Frame) {
 
     for msg in &app.messages {
         if msg.role == "user" {
-            let wrapped = wrap_text(&msg.text, available_width);
-            for line_text in wrapped {
-                let padded = format!("  {}  ", line_text);
-                let style = if msg.is_tool_result {
-                    Style::default().fg(Color::DarkGray)
+            if msg.is_tool_result {
+                // For tool results, show a brief summary instead of full content
+                // Try to extract file path and show filename
+                let display_text = if let Some(path_start) = msg.text.find("'") {
+                    if let Some(path_end) = msg.text[path_start + 1..].find('\'') {
+                        let file_path = &msg.text[path_start + 1..path_start + 1 + path_end];
+                        // Extract just the filename from the path
+                        let filename = file_path.split('/').next_back().unwrap_or(file_path);
+                        format!("Reading {}", filename)
+                    } else {
+                        "Reading file...".to_string()
+                    }
                 } else {
-                    Style::default().bg(Color::Black)
+                    "Tool result processed".to_string()
                 };
+                let padded = format!("  {}  ", display_text);
+                let style = Style::default().fg(Color::DarkGray).italic();
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
+            } else {
+                // Regular user message
+                let wrapped = wrap_text(&msg.text, available_width);
+                for line_text in wrapped {
+                    let padded = format!("  {}  ", line_text);
+                    let style = Style::default().bg(Color::Black);
+                    lines.push(Line::from(vec![Span::styled(padded, style)]));
+                }
             }
         } else {
             // Render thinking tokens first (if present)
@@ -422,11 +439,22 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
                 lines.push(Line::from(Span::raw(log.request_body.clone())));
             }
 
-            // Show response body if available
-            if let Some(response) = &log.response_body {
+            // Show full response (accumulated content from LLM)
+            if let Some(full_response) = &log.full_response {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
                     "Response Body:",
+                    Style::default().fg(Color::Cyan),
+                )));
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::raw(full_response.clone())));
+            }
+
+            // Show SSE events if available
+            if let Some(response) = &log.response_body {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "SSE Events:",
                     Style::default().fg(Color::Cyan),
                 )));
                 lines.push(Line::from(""));
@@ -436,13 +464,13 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
                     let trimmed = line.trim();
                     if trimmed.starts_with("data: ") {
                         let json_str = trimmed.strip_prefix("data: ").unwrap_or(trimmed);
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if let Ok(pretty) = serde_json::to_string_pretty(&json) {
-                                for pretty_line in pretty.lines() {
-                                    lines.push(Line::from(Span::raw(pretty_line.to_string())));
-                                }
-                                continue;
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str)
+                            && let Ok(pretty) = serde_json::to_string_pretty(&json)
+                        {
+                            for pretty_line in pretty.lines() {
+                                lines.push(Line::from(Span::raw(pretty_line.to_string())));
                             }
+                            continue;
                         }
                     }
                     lines.push(Line::from(Span::raw(line.to_string())));
@@ -457,7 +485,7 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
                 .collect();
 
             frame.render_widget(block, modal_area);
-            frame.render_widget(Clear::default(), inner);
+            frame.render_widget(Clear, inner);
             frame.render_widget(
                 Paragraph::new(visible_lines)
                     .style(Style::default().bg(Color::Black))
@@ -537,7 +565,7 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
             .collect();
 
         frame.render_widget(block, modal_area);
-        frame.render_widget(Clear::default(), inner);
+        frame.render_widget(Clear, inner);
         frame.render_widget(
             Paragraph::new(visible_lines).style(Style::default().bg(Color::Black)),
             inner,

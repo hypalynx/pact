@@ -293,11 +293,13 @@ fn test_finish_reason() {
         }]
     });
 
-    if let Some(choices) = json_val.get("choices").and_then(|c| c.as_array()) {
-        if let Some(first_choice) = choices.first() {
-            let finish_reason = first_choice.get("finish_reason").and_then(|fr| fr.as_str());
-            assert_eq!(finish_reason, Some("stop"));
-        }
+    if let Some(first_choice) = json_val
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|c| c.first())
+    {
+        let finish_reason = first_choice.get("finish_reason").and_then(|fr| fr.as_str());
+        assert_eq!(finish_reason, Some("stop"));
     }
 }
 
@@ -323,23 +325,20 @@ fn test_complex_tool_arguments() {
         .and_then(|c| c.get(0))
         .and_then(|c| c.get("delta"));
 
-    if let Some(tool_calls) = delta
+    if let Some(args_str) = delta
         .and_then(|d| d.get("tool_calls"))
         .and_then(|tc| tc.as_array())
+        .and_then(|tc| tc.first())
+        .and_then(|tc| tc.get("function"))
+        .and_then(|f| f.get("arguments"))
+        .and_then(|a| a.as_str())
     {
-        if let Some(args_str) = tool_calls
-            .first()
-            .and_then(|tc| tc.get("function"))
-            .and_then(|f| f.get("arguments"))
-            .and_then(|a| a.as_str())
-        {
-            let args: serde_json::Value = serde_json::from_str(args_str).unwrap();
-            assert_eq!(args.get("command").and_then(|v| v.as_str()), Some("ls -la"));
-            assert_eq!(
-                args.get("workdir").and_then(|v| v.as_str()),
-                Some("/home/user")
-            );
-            assert_eq!(args.get("timeout").and_then(|v| v.as_u64()), Some(30));
-        }
+        let args: serde_json::Value = serde_json::from_str(args_str).unwrap();
+        assert_eq!(args.get("command").and_then(|v| v.as_str()), Some("ls -la"));
+        assert_eq!(
+            args.get("workdir").and_then(|v| v.as_str()),
+            Some("/home/user")
+        );
+        assert_eq!(args.get("timeout").and_then(|v| v.as_u64()), Some(30));
     }
 }

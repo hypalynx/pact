@@ -103,18 +103,6 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
     }
 }
 
-pub fn messages_path() -> PathBuf {
-    let mut path = dirs::data_dir().unwrap_or_else(|| {
-        let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.push(".local/share");
-        home
-    });
-    path.push("pact");
-    std::fs::create_dir_all(&path).ok();
-    path.push("messages.json");
-    path
-}
-
 pub fn db_path() -> PathBuf {
     let mut path = dirs::data_dir().unwrap_or_else(|| {
         let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));

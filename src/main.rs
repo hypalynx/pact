@@ -54,7 +54,9 @@ fn main() -> std::io::Result<()> {
         config.ui.default_mode.clone(),
         modes_config,
     );
-    app.history = App::load_history().unwrap_or_default();
+    // Load history from SQLite database (for up/down arrow navigation)
+    // Don't load previous messages - start with a fresh session
+    app.load_history_from_db();
     app.context_window = server_info.context_window;
     app.model_name = server_info.model_name;
 
@@ -141,6 +143,7 @@ fn main() -> std::io::Result<()> {
                 llm::LlmEvent::ApiLog {
                     request_body,
                     response_body,
+                    full_response,
                     duration_ms,
                     error_message,
                 } => {
@@ -148,6 +151,7 @@ fn main() -> std::io::Result<()> {
                         let _ = db.save_api_log(
                             &request_body,
                             response_body.as_deref(),
+                            full_response.as_deref(),
                             duration_ms,
                             error_message.as_deref(),
                         );
@@ -164,16 +168,14 @@ fn main() -> std::io::Result<()> {
                     }
 
                     // Ctrl+G toggles control panel
-                    if let KeyCode::Char('g') = key.code {
-                        if key.modifiers.contains(event::KeyModifiers::CONTROL) {
-                            app.panel_state = match app.panel_state {
-                                crate::app::PanelState::None => {
-                                    crate::app::PanelState::ControlPanel
-                                }
-                                _ => crate::app::PanelState::None,
-                            };
-                            continue;
-                        }
+                    if let KeyCode::Char('g') = key.code
+                        && key.modifiers.contains(event::KeyModifiers::CONTROL)
+                    {
+                        app.panel_state = match app.panel_state {
+                            crate::app::PanelState::None => crate::app::PanelState::ControlPanel,
+                            _ => crate::app::PanelState::None,
+                        };
+                        continue;
                     }
 
                     // Handle panel keys
