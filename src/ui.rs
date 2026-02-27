@@ -71,6 +71,18 @@ fn draw_messages(app: &App, frame: &mut Frame) {
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
             }
         } else {
+            // Render thinking tokens first (if present)
+            if let Some(thinking) = &msg.thinking {
+                let wrapped = wrap_text(thinking, available_width);
+                for line_text in wrapped {
+                    let style = Style::default().fg(Color::DarkGray).italic();
+                    let padded = format!("  {}  ", line_text);
+                    lines.push(Line::from(vec![Span::styled(padded, style)]));
+                }
+                // Empty line between thinking and response
+                lines.push(Line::from(""));
+            }
+            // Render main response text
             let wrapped = wrap_text(&msg.text, available_width);
             for line_text in wrapped {
                 let spans = parse_markdown_line(&line_text);
@@ -80,6 +92,21 @@ fn draw_messages(app: &App, frame: &mut Frame) {
         lines.push(Line::from(""));
     }
 
+    // Render pending thinking tokens (while streaming)
+    if !app.pending_thinking.is_empty() {
+        let wrapped = wrap_text(&app.pending_thinking, available_width);
+        for line_text in wrapped {
+            let style = Style::default().fg(Color::DarkGray).italic();
+            let padded = format!("  {}  ", line_text);
+            lines.push(Line::from(vec![Span::styled(padded, style)]));
+        }
+        // Empty line between thinking and response
+        if !app.pending_response.is_empty() {
+            lines.push(Line::from(""));
+        }
+    }
+
+    // Render pending response text
     if !app.pending_response.is_empty() {
         let wrapped = wrap_text(&app.pending_response, available_width);
         for line_text in wrapped {
