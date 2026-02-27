@@ -44,8 +44,10 @@ fn main() -> std::io::Result<()> {
 
     let server_info = utils::fetch_server_info(&config.api.endpoint);
 
+    let debug = args.debug || config.debug;
+
     let mut app = App::new(
-        args.debug,
+        debug,
         config.api.endpoint.clone(),
         config.api.max_tokens,
         temperature,

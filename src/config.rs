@@ -9,6 +9,8 @@ pub struct Config {
     pub api: ApiConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub debug: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
