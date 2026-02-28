@@ -99,6 +99,11 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
             draw_debug_modal(app, frame);
         }
     }
+
+    // Draw file picker if open
+    if app.file_picker.is_some() {
+        draw_file_picker(app, frame);
+    }
 }
 
 fn draw_messages(app: &mut App, frame: &mut Frame) {
@@ -403,6 +408,11 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
                 Style::default().fg(Color::Red),
             ));
         }
+    } else if app.is_exit_confirming() {
+        left_spans.push(Span::styled(
+            "Press Ctrl+C again to exit",
+            Style::default().fg(Color::DarkGray),
+        ));
     } else if app.is_copying() {
         left_spans.push(Span::styled(
             "Copied to clipboard!",
@@ -481,6 +491,67 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         left_spans.push(Span::raw(" ".repeat(gap)));
         left_spans.push(Span::styled(right_text, status_style));
         frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+    }
+}
+
+fn draw_file_picker(app: &App, frame: &mut Frame) {
+    if let Some(picker) = &app.file_picker {
+        let max_visible = 8;
+        let height = (picker.filtered.len().min(max_visible) + 2).max(3) as u16;
+
+        // Position: top edge of input_rect, same horizontal position
+        let area = Rect {
+            x: app.input_rect.x,
+            y: app.input_rect.y.saturating_sub(height),
+            width: app.input_rect.width,
+            height,
+        };
+
+        // Only draw if there's space above the input
+        if app.input_rect.y >= height {
+            let title = format!("@{}", picker.query);
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .style(Style::default().bg(Color::Black));
+
+            let inner = area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 1,
+            });
+
+            // Draw background
+            frame.render_widget(Clear, area);
+            frame.render_widget(block, area);
+
+            // Render visible entries
+            let start_idx = if picker.selected > max_visible - 1 {
+                picker.selected - max_visible + 1
+            } else {
+                0
+            };
+            let end_idx = (start_idx + max_visible).min(picker.filtered.len());
+
+            let mut lines = Vec::new();
+            for (i, entry) in picker.filtered[start_idx..end_idx].iter().enumerate() {
+                let idx = start_idx + i;
+                let is_selected = idx == picker.selected;
+                let style = if is_selected {
+                    Style::default().bg(Color::Rgb(50, 50, 50))
+                } else {
+                    Style::default()
+                };
+
+                let truncated = if entry.len() > inner.width as usize {
+                    format!("{}...", &entry[..inner.width.saturating_sub(3) as usize])
+                } else {
+                    entry.clone()
+                };
+                lines.push(Line::from(Span::styled(truncated, style)));
+            }
+
+            frame.render_widget(Paragraph::new(lines), inner);
+        }
     }
 }
 

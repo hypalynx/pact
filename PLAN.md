@@ -6,15 +6,11 @@
 **Priority:** Implement debug view for querying API logs and message history
 
 4. **Other tasks**
-   - [ ] Read user AGENTS.md and AGENTS.md for files in projects
    - [ ] make sure that.. temperature: null isn't being sent if
      the value is null.
    - [ ] message queuing.. should saying "queued" if a message
      has been submitted but not submitted to be processed by
      llama.cpp.
-   - [ ] allow ctrl + z to suspend the program (check if this is
-     a good thing i.e will we still receive input from the LLM?
-     lol)
    - [ ] markdown doesn't process single *formatting* as italic.
    - [ ] Mac OS doesn't use ~/.config/pact/pact.yaml for it's
      config/data location and instead uses ~/Application

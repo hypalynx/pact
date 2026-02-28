@@ -161,6 +161,13 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
 
 /// Handle keyboard events
 pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
+    // Reset exit confirmation on any keypress other than Ctrl+C
+    if !(matches!(key.code, KeyCode::Char('c'))
+        && key.modifiers.contains(KeyModifiers::CONTROL))
+    {
+        app.reset_exit_confirmation();
+    }
+
     // Ctrl+G toggles control panel
     if let KeyCode::Char('g') = key.code
         && key.modifiers.contains(KeyModifiers::CONTROL)
@@ -170,6 +177,11 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
             _ => PanelState::None,
         };
         return true;
+    }
+
+    // Handle file picker keys if picker is open
+    if app.file_picker.is_some() {
+        return handle_file_picker_key(app, key);
     }
 
     // Handle panel-specific keys
@@ -189,7 +201,11 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     match key.code {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             if app.input.is_empty() {
-                return false; // Signal to exit
+                if app.is_exit_confirming() {
+                    return false; // Second Ctrl+C - actually exit
+                } else {
+                    app.set_exit_confirmation(); // First Ctrl+C - show confirmation
+                }
             } else {
                 app.input.clear();
                 app.cursor_pos = 0;
@@ -220,6 +236,12 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.insert_char('\n');
         }
+        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.history_down();
+        }
+        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.history_up();
+        }
         KeyCode::Enter => {
             if !app.input.trim().is_empty() {
                 app.submit_message();
@@ -229,7 +251,12 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
             app.delete_char();
         }
         KeyCode::Char(c) => {
-            app.insert_char(c);
+            if c == '@' {
+                app.insert_char(c);
+                app.start_file_picker();
+            } else {
+                app.insert_char(c);
+            }
         }
         KeyCode::Up => {
             app.history_up();
@@ -358,6 +385,56 @@ fn handle_debug_panel_key(app: &mut App, key: KeyEvent) {
             _ => {}
         }
     }
+}
+
+/// Handle file picker specific keys
+fn handle_file_picker_key(app: &mut App, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Up => {
+            app.file_picker_up();
+        }
+        KeyCode::Down => {
+            app.file_picker_down();
+        }
+        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.file_picker_up();
+        }
+        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.file_picker_down();
+        }
+        KeyCode::Enter | KeyCode::Tab => {
+            app.file_picker_select();
+        }
+        KeyCode::Esc => {
+            // Remove @ from input and close picker
+            if let Some(picker) = &app.file_picker {
+                let at_start = picker.at_start;
+                app.file_picker = None;
+                if at_start < app.input.len() {
+                    app.input.drain(at_start..app.cursor_pos);
+                    app.cursor_pos = at_start;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if !app.file_picker_backspace() {
+                // Backspaced past @, close picker and remove @
+                if let Some(picker) = &app.file_picker {
+                    let at_start = picker.at_start;
+                    app.file_picker = None;
+                    if at_start < app.input.len() {
+                        app.input.drain(at_start..app.cursor_pos);
+                        app.cursor_pos = at_start;
+                    }
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            app.file_picker_type(c);
+        }
+        _ => {}
+    }
+    true
 }
 
 /// Handle mouse events

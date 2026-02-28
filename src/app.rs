@@ -12,6 +12,55 @@ pub enum PanelState {
     Debug,
 }
 
+pub struct FilePicker {
+    pub query: String,
+    pub at_start: usize,      // byte offset in `input` where @ was typed
+    pub all_entries: Vec<String>,
+    pub filtered: Vec<String>,
+    pub selected: usize,
+}
+
+fn scan_project_files() -> Vec<String> {
+    let mut files = Vec::new();
+    walk_dir(std::path::Path::new("."), &mut files, 0);
+    files
+}
+
+fn walk_dir(dir: &std::path::Path, out: &mut Vec<String>, depth: usize) {
+    if depth > 6 {
+        return;
+    }
+    let skip = [
+        ".git",
+        "node_modules",
+        "target",
+        "dist",
+        ".venv",
+        "__pycache__",
+        ".next",
+    ];
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if skip.contains(&&*name_str) {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            walk_dir(&path, out, depth + 1);
+        } else {
+            let rel = path
+                .to_string_lossy()
+                .trim_start_matches("./")
+                .to_string();
+            out.push(rel);
+        }
+    }
+}
+
 pub struct App {
     pub db: Option<Db>,
     pub messages: Vec<Message>,
@@ -49,6 +98,7 @@ pub struct App {
     pub last_copy_frame: u32,
     pub error_message: Option<String>,
     pub last_error_frame: u32,
+    pub exit_confirm_frame: u32,
     pub panel_state: PanelState,
     pub debug_scroll: usize,
     pub debug_filter_errors: bool,
@@ -60,6 +110,7 @@ pub struct App {
     pub progress: Option<f32>,
     pub all_line_texts: Vec<String>,
     pub agents_context: Option<String>,
+    pub file_picker: Option<FilePicker>,
 }
 
 impl App {
@@ -119,6 +170,7 @@ impl App {
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
             error_message: db_error,
             last_error_frame: u32::MAX,
+            exit_confirm_frame: u32::MAX,
             panel_state: PanelState::None,
             debug_scroll: 0,
             debug_filter_errors: false,
@@ -130,6 +182,7 @@ impl App {
             progress: None,
             all_line_texts: Vec::new(),
             agents_context,
+            file_picker: None,
         }
     }
 
@@ -563,6 +616,23 @@ impl App {
         self.frame_count.saturating_sub(self.last_error_frame) < 125
     }
 
+    pub fn is_exit_confirming(&self) -> bool {
+        // Show confirmation for ~2 seconds (roughly 125 frames at 16ms)
+        // Don't show if we've never confirmed (exit_confirm_frame is u32::MAX)
+        if self.exit_confirm_frame == u32::MAX {
+            return false;
+        }
+        self.frame_count.saturating_sub(self.exit_confirm_frame) < 125
+    }
+
+    pub fn set_exit_confirmation(&mut self) {
+        self.exit_confirm_frame = self.frame_count;
+    }
+
+    pub fn reset_exit_confirmation(&mut self) {
+        self.exit_confirm_frame = u32::MAX;
+    }
+
     pub fn refresh_debug_logs(&mut self) {
         if let Some(db) = &self.db {
             self.debug_logs = db.recent_api_logs(100).unwrap_or_default();
@@ -603,6 +673,81 @@ impl App {
             self.debug_expanded_row = Some(row_idx);
             self.debug_expand_scroll = 0;
             self.debug_expand_scroll_x = 0;
+        }
+    }
+
+    pub fn start_file_picker(&mut self) {
+        let all_entries = scan_project_files();
+        let at_start = self.cursor_pos.saturating_sub(1);
+        self.file_picker = Some(FilePicker {
+            query: String::new(),
+            at_start,
+            all_entries,
+            filtered: Vec::new(),
+            selected: 0,
+        });
+        self.file_picker_update_filter();
+    }
+
+    fn file_picker_update_filter(&mut self) {
+        if let Some(picker) = &mut self.file_picker {
+            let query_lower = picker.query.to_lowercase();
+            picker.filtered = picker
+                .all_entries
+                .iter()
+                .filter(|entry| entry.to_lowercase().contains(&query_lower))
+                .cloned()
+                .collect();
+            picker.selected = 0;
+        }
+    }
+
+    pub fn file_picker_type(&mut self, c: char) {
+        if let Some(picker) = &mut self.file_picker {
+            picker.query.push(c);
+        }
+        self.file_picker_update_filter();
+    }
+
+    pub fn file_picker_backspace(&mut self) -> bool {
+        if let Some(picker) = &mut self.file_picker {
+            if picker.query.is_empty() {
+                return false; // Signal to close picker
+            }
+            picker.query.pop();
+        } else {
+            return true;
+        }
+        self.file_picker_update_filter();
+        true
+    }
+
+    pub fn file_picker_up(&mut self) {
+        if let Some(picker) = &mut self.file_picker {
+            picker.selected = picker.selected.saturating_sub(1);
+        }
+    }
+
+    pub fn file_picker_down(&mut self) {
+        if let Some(picker) = &mut self.file_picker
+            && picker.selected < picker.filtered.len().saturating_sub(1)
+        {
+            picker.selected += 1;
+        }
+    }
+
+    pub fn file_picker_select(&mut self) {
+        if let Some(picker) = self.file_picker.take()
+            && let Some(path) = picker.filtered.get(picker.selected)
+            && picker.at_start <= self.input.len()
+        {
+            // Replace from at_start to cursor_pos with the selected path
+            let at_start = picker.at_start;
+            let cursor_pos = self.cursor_pos;
+
+            self.input.drain(at_start..cursor_pos);
+            self.input.insert_str(at_start, path);
+            self.cursor_pos = at_start + path.len();
         }
     }
 }
