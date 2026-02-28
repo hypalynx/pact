@@ -71,8 +71,10 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if let Some(db) = &app.db {
                 let _ = db.save_message(&msg);
             }
-            app.loading = false;
-            app.progress = None;
+            app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
+            if app.active_llm_calls == 0 {
+                app.progress = None;
+            }
 
             // Auto-scroll to bottom if we were at bottom before message added
             if was_at_bottom {
@@ -98,8 +100,10 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 thinking: None,
                 tool_result_content: None,
             });
-            app.loading = false;
-            app.progress = None;
+            app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
+            if app.active_llm_calls == 0 {
+                app.progress = None;
+            }
 
             // Auto-scroll to bottom if we were at bottom before message added
             if was_at_bottom {

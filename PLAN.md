@@ -26,6 +26,11 @@
      (which is committed to dotfiles..)
    - [ ] Ctrl + c confirm before quitting the application
    - [ ] provide a --resume flag to resume previous sessions
+   - [ ] make sure progress % is shown in the status bar if
+     available
+   - [ ] "Reading <filename>" replaces thinking output in the
+     message history/buffer/section but it should be appended
+     sequentially to the message history/buffer/section.
 
 5. **Start writing tests for the parser**
 

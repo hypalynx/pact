@@ -171,7 +171,7 @@ fn test_handle_done_event_creates_message() {
     assert!(app.pending_response.is_empty());
     assert!(app.pending_thinking.is_empty());
     // Loading should be reset
-    assert!(!app.loading);
+    assert_eq!(app.active_llm_calls, 0);
 
     // Verify message content
     let msg = &app.messages[initial_count];
@@ -234,7 +234,7 @@ fn test_handle_error_event() {
 
     // Error message should be added
     assert_eq!(app.messages.len(), initial_count + 1);
-    assert!(!app.loading);
+    assert_eq!(app.active_llm_calls, 0);
 
     let msg = &app.messages[initial_count];
     assert_eq!(msg.role, "assistant");
@@ -269,4 +269,81 @@ fn test_handle_progress_event() {
     handle_llm_event(&mut app, LlmEvent::Progress(0.5));
 
     assert_eq!(app.progress, Some(0.5));
+}
+
+#[test]
+fn test_active_llm_calls_counter_with_tool_calls() {
+    let mut app = create_test_app();
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+
+    // Simulate: user sends message, triggers first API call
+    app.active_llm_calls = 1;
+    app.pending_response = "I'll read that file for you".to_string();
+
+    // LLM responds with tool call
+    handle_llm_event(
+        &mut app,
+        LlmEvent::ToolCall {
+            name: "read".to_string(),
+            args: serde_json::from_str(r#"{"filePath": "test.txt"}"#).unwrap(),
+        },
+    );
+
+    // Tool result message added, and send_to_llm() called → counter now 2
+    assert_eq!(app.active_llm_calls, 2);
+    assert!(
+        app.messages.last().unwrap().is_tool_result,
+        "Tool result should be added"
+    );
+
+    // First API call finishes (sends Done)
+    handle_llm_event(&mut app, LlmEvent::Done);
+
+    // Counter should decrement but NOT reach 0 (second call still in progress)
+    assert_eq!(
+        app.active_llm_calls, 1,
+        "Loading should persist while second call is active"
+    );
+
+    // Second API call finishes
+    app.pending_response = "Here's the file content...".to_string();
+    handle_llm_event(&mut app, LlmEvent::Done);
+
+    // Now counter reaches 0
+    assert_eq!(
+        app.active_llm_calls, 0,
+        "Loading should stop when all calls complete"
+    );
+    assert_eq!(app.progress, None);
+}
+
+#[test]
+fn test_active_llm_calls_counter_error_resets_properly() {
+    let mut app = create_test_app();
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+
+    // Two concurrent calls
+    app.active_llm_calls = 2;
+
+    // First call errors out
+    handle_llm_event(&mut app, LlmEvent::Error("Network timeout".to_string()));
+
+    // Counter decrements but still loading
+    assert_eq!(app.active_llm_calls, 1);
+
+    // Second call errors
+    handle_llm_event(&mut app, LlmEvent::Error("Connection refused".to_string()));
+
+    // Now counter reaches 0
+    assert_eq!(app.active_llm_calls, 0);
 }

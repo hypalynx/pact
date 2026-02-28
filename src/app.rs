@@ -23,7 +23,7 @@ pub struct App {
     pub messages_rect: Rect,
     pub rx: mpsc::Receiver<LlmEvent>,
     pub tx: mpsc::Sender<LlmEvent>,
-    pub loading: bool,
+    pub active_llm_calls: usize,
     pub pending_response: String,
     pub pending_thinking: String,
     pub debug: bool,
@@ -93,7 +93,7 @@ impl App {
             messages_rect: Rect::default(),
             rx,
             tx,
-            loading: false,
+            active_llm_calls: 0,
             pending_response: String::new(),
             pending_thinking: String::new(),
             debug,
@@ -158,7 +158,7 @@ impl App {
     }
 
     pub fn send_to_llm(&mut self) {
-        self.loading = true;
+        self.active_llm_calls += 1;
         self.pending_response.clear();
         self.pending_thinking.clear();
         self.user_scrolled = false;

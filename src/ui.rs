@@ -322,7 +322,7 @@ fn draw_input(app: &App, frame: &mut Frame) {
         Paragraph::new(app.input.clone()).style(Style::default().fg(Color::White).bg(Color::Black));
     frame.render_widget(input, inner);
 
-    if !app.loading {
+    if app.active_llm_calls == 0 {
         let (cursor_x, cursor_y) = cursor_position(&app.input, app.cursor_pos);
         let cursor_pos = ratatui::layout::Position {
             x: inner.x + cursor_x as u16,
@@ -433,7 +433,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
             Style::default().fg(mode_color),
         ));
 
-        if app.loading {
+        if app.active_llm_calls > 0 {
             left_spans.push(Span::raw(" "));
             let braille_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
             let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
