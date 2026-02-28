@@ -135,15 +135,21 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             full_response,
             duration_ms,
             error_message,
-        } => {
+            model_name,
+        } =>
+        {
+            #[allow(clippy::collapsible_if)]
             if let Some(db) = &app.db {
-                let _ = db.save_api_log(
+                if let Err(e) = db.save_api_log(
                     &request_body,
                     response_body.as_deref(),
                     full_response.as_deref(),
                     duration_ms,
                     error_message.as_deref(),
-                );
+                    model_name.as_deref(),
+                ) {
+                    app.set_error(format!("DB error: {}", e));
+                }
             }
         }
     }

@@ -16,6 +16,7 @@ pub struct ApiLogEntry {
     pub tokens_completion: Option<i64>,
     pub duration_ms: Option<i64>,
     pub error_message: Option<String>,
+    pub model_name: Option<String>,
 }
 
 impl Db {
@@ -58,7 +59,8 @@ impl Db {
                 tokens_prompt INTEGER,
                 tokens_completion INTEGER,
                 duration_ms INTEGER,
-                error_message TEXT
+                error_message TEXT,
+                model_name TEXT
             );
             "#,
         )?;
@@ -91,19 +93,20 @@ impl Db {
         full_response: Option<&str>,
         duration_ms: u64,
         error: Option<&str>,
+        model_name: Option<&str>,
     ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO api_logs (created_at, request_body, response_body, full_response, duration_ms, error_message)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![now, body, response, full_response, duration_ms as i64, error],
+            "INSERT INTO api_logs (created_at, request_body, response_body, full_response, duration_ms, error_message, model_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![now, body, response, full_response, duration_ms as i64, error, model_name],
         )?;
         Ok(())
     }
 
     pub fn recent_api_logs(&self, limit: usize) -> Result<Vec<ApiLogEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message
+            "SELECT id, created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message, model_name
              FROM api_logs ORDER BY id DESC LIMIT ?1",
         )?;
 
@@ -118,6 +121,7 @@ impl Db {
                 tokens_completion: row.get(6)?,
                 duration_ms: row.get(7)?,
                 error_message: row.get(8)?,
+                model_name: row.get(9)?,
             })
         })?;
 

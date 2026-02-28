@@ -55,6 +55,43 @@ pub struct ServerInfo {
     pub context_window: usize,
 }
 
+pub fn extract_and_format_model_name(raw_name: &str) -> String {
+    let mut name = raw_name.to_string();
+
+    // Remove .gguf extension if present
+    if name.ends_with(".gguf") {
+        name = name[..name.len() - 5].to_string();
+
+        // Remove quantization suffix (e.g., Q4_K_M, IQ3_XS, q6-k, etc.)
+        // Look for -Q<digits> or -IQ<digits> pattern (case-insensitive)
+        let name_lower = name.to_lowercase();
+        for (i, _) in name_lower.match_indices('-') {
+            let after_dash = &name_lower[i + 1..];
+            // Check if this dash starts a quant suffix: Q/IQ followed by digit
+            let is_quant = if after_dash.starts_with("iq") {
+                after_dash
+                    .chars()
+                    .nth(2)
+                    .is_some_and(|c| c.is_ascii_digit())
+            } else if after_dash.starts_with('q') {
+                after_dash
+                    .chars()
+                    .nth(1)
+                    .is_some_and(|c| c.is_ascii_digit())
+            } else {
+                false
+            };
+            if is_quant {
+                name = name[..i].to_string();
+                break;
+            }
+        }
+    }
+
+    // Convert to kebab-case: lowercase and replace underscores with hyphens
+    name.to_lowercase().replace('_', "-")
+}
+
 pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
     let client = reqwest::blocking::Client::new();
 
@@ -69,8 +106,8 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
             let model_name = first_model
                 .get("id")
                 .and_then(|id| id.as_str())
-                .unwrap_or("unknown")
-                .to_string();
+                .map(extract_and_format_model_name)
+                .unwrap_or_else(|| "unknown".to_string());
             let context_window = first_model
                 .get("max_tokens")
                 .and_then(|m| m.as_u64())
@@ -85,8 +122,8 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
         let model_name = json
             .get("id")
             .and_then(|id| id.as_str())
-            .unwrap_or("unknown")
-            .to_string();
+            .map(extract_and_format_model_name)
+            .unwrap_or_else(|| "unknown".to_string());
         let context_window = json
             .get("max_tokens")
             .and_then(|m| m.as_u64())

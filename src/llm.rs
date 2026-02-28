@@ -37,9 +37,11 @@ pub enum LlmEvent {
         full_response: Option<String>,
         duration_ms: u64,
         error_message: Option<String>,
+        model_name: Option<String>,
     },
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn call_llm(
     messages: Vec<Message>,
     tx: mpsc::Sender<LlmEvent>,
@@ -48,6 +50,7 @@ pub fn call_llm(
     max_tokens: usize,
     temperature: Option<f32>,
     system_prompt: Option<String>,
+    model_name: String,
 ) {
     let start_time = Instant::now();
 
@@ -66,6 +69,7 @@ pub fn call_llm(
                     full_response: None,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     error_message: Some(err_msg),
+                    model_name: Some(model_name.clone()),
                 });
             }
             return;
@@ -124,6 +128,7 @@ pub fn call_llm(
                     full_response: None,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     error_message: Some(err_msg),
+                    model_name: Some(model_name.clone()),
                 });
             }
             return;
@@ -351,6 +356,7 @@ pub fn call_llm(
             full_response,
             duration_ms: start_time.elapsed().as_millis() as u64,
             error_message: None,
+            model_name: Some(model_name),
         });
     }
 

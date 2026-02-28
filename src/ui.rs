@@ -395,12 +395,14 @@ fn draw_control_panel(_app: &App, frame: &mut Frame) {
 fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     let mut left_spans = Vec::new();
 
-    // Show error notification if present, otherwise copy notification, otherwise normal status
-    if let Some(ref error) = app.error_message {
-        left_spans.push(Span::styled(
-            format!("⚠ {}", error),
-            Style::default().fg(Color::Red),
-        ));
+    // Show error notification if recent, otherwise copy notification, otherwise normal status
+    if app.has_error() {
+        if let Some(ref error) = app.error_message {
+            left_spans.push(Span::styled(
+                format!("⚠ {}", error),
+                Style::default().fg(Color::Red),
+            ));
+        }
     } else if app.is_copying() {
         left_spans.push(Span::styled(
             "Copied to clipboard!",

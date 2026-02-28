@@ -136,7 +136,7 @@ fn test_save_and_load_api_log() {
     let request = r#"{"model":"test"}"#;
     let response = r#"{"result":"ok"}"#;
 
-    db.save_api_log(request, Some(response), None, 100, None)
+    db.save_api_log(request, Some(response), None, 100, None, None)
         .expect("Failed to save API log");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
@@ -155,7 +155,7 @@ fn test_save_api_log_with_error() {
     let request = r#"{"model":"test"}"#;
     let error = "Connection timeout";
 
-    db.save_api_log(request, None, None, 5000, Some(error))
+    db.save_api_log(request, None, None, 5000, Some(error), None)
         .expect("Failed to save API log");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
@@ -168,7 +168,7 @@ fn test_clear_api_logs() {
     let db = create_temp_db();
     db.init_schema().expect("Failed to init schema");
 
-    db.save_api_log(r#"{"test":true}"#, None, None, 50, None)
+    db.save_api_log(r#"{"test":true}"#, None, None, 50, None, None)
         .expect("Failed to save API log");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
@@ -186,7 +186,7 @@ fn test_recent_api_logs_limit() {
     db.init_schema().expect("Failed to init schema");
 
     for i in 0..5 {
-        db.save_api_log(&format!(r#"{{"id":{}}}"#, i), None, None, 50, None)
+        db.save_api_log(&format!(r#"{{"id":{}}}"#, i), None, None, 50, None, None)
             .expect("Failed to save API log");
     }
 
@@ -233,6 +233,7 @@ fn test_save_api_log_with_all_fields() {
     let response = r#"{"result":"ok"}"#;
     let full_response = r#"{"full":"data"}"#;
     let error = "Test error";
+    let model_name = "qwen3-coder-30b";
 
     db.save_api_log(
         request,
@@ -240,6 +241,7 @@ fn test_save_api_log_with_all_fields() {
         Some(full_response),
         150,
         Some(error),
+        Some(model_name),
     )
     .expect("Failed to save API log");
 
@@ -250,6 +252,23 @@ fn test_save_api_log_with_all_fields() {
     assert_eq!(logs[0].full_response, Some(full_response.to_string()));
     assert_eq!(logs[0].duration_ms, Some(150));
     assert_eq!(logs[0].error_message, Some(error.to_string()));
+    assert_eq!(logs[0].model_name, Some(model_name.to_string()));
+}
+
+#[test]
+fn test_save_api_log_with_model_name() {
+    let db = create_temp_db();
+    db.init_schema().expect("Failed to init schema");
+
+    let request = r#"{"model":"test"}"#;
+    let model_name = "moonshot-v1-8k";
+
+    db.save_api_log(request, None, None, 50, None, Some(model_name))
+        .expect("Failed to save API log");
+
+    let logs = db.recent_api_logs(10).expect("Failed to load API logs");
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].model_name, Some(model_name.to_string()));
 }
 
 #[test]
@@ -259,13 +278,14 @@ fn test_save_api_log_with_none_fields() {
 
     let request = r#"{"model":"test"}"#;
 
-    db.save_api_log(request, None, None, 100, None)
+    db.save_api_log(request, None, None, 100, None, None)
         .expect("Failed to save API log");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].request_body, request);
     assert_eq!(logs[0].response_body, None);
+    assert_eq!(logs[0].model_name, None);
     assert_eq!(logs[0].full_response, None);
     assert_eq!(logs[0].error_message, None);
 }

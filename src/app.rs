@@ -48,6 +48,7 @@ pub struct App {
     pub selection_end: Option<(u16, u16)>,
     pub last_copy_frame: u32,
     pub error_message: Option<String>,
+    pub last_error_frame: u32,
     pub panel_state: PanelState,
     pub debug_scroll: usize,
     pub debug_filter_errors: bool,
@@ -115,6 +116,7 @@ impl App {
             selection_end: None,
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
             error_message: db_error,
+            last_error_frame: u32::MAX,
             panel_state: PanelState::None,
             debug_scroll: 0,
             debug_filter_errors: false,
@@ -169,6 +171,7 @@ impl App {
             .get(&self.mode_name)
             .and_then(|m| m.system_prompt.clone());
 
+        let model_name = self.model_name.clone();
         std::thread::spawn(move || {
             crate::llm::call_llm(
                 messages,
@@ -178,6 +181,7 @@ impl App {
                 max_tokens,
                 temperature,
                 system_prompt,
+                model_name,
             );
         });
     }
@@ -535,6 +539,20 @@ impl App {
             return false;
         }
         self.frame_count.saturating_sub(self.last_copy_frame) < 125
+    }
+
+    pub fn set_error(&mut self, msg: impl Into<String>) {
+        self.error_message = Some(msg.into());
+        self.last_error_frame = self.frame_count;
+    }
+
+    pub fn has_error(&self) -> bool {
+        // Show error for ~2 seconds (roughly 125 frames at 16ms)
+        // Don't show if we've never errored (last_error_frame is u32::MAX)
+        if self.last_error_frame == u32::MAX {
+            return false;
+        }
+        self.frame_count.saturating_sub(self.last_error_frame) < 125
     }
 
     pub fn refresh_debug_logs(&mut self) {

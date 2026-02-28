@@ -1,4 +1,4 @@
-use pact::utils::{format_tokens, get_git_branch, get_pwd_display};
+use pact::utils::{extract_and_format_model_name, format_tokens, get_git_branch, get_pwd_display};
 
 #[test]
 fn test_format_tokens_under_1000() {
@@ -89,4 +89,56 @@ fn test_fetch_server_info_default_on_error() {
     // Should return defaults on error
     assert_eq!(info.model_name, "unknown");
     assert_eq!(info.context_window, 65535);
+}
+
+#[test]
+fn test_extract_model_name_with_gguf_and_quant() {
+    // Test GGUF with quantization suffix
+    assert_eq!(
+        extract_and_format_model_name("Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"),
+        "qwen3-coder-30b-a3b-instruct"
+    );
+}
+
+#[test]
+fn test_extract_model_name_with_gguf_different_quant() {
+    // Test different quantization format (multi-part: q6-k)
+    assert_eq!(
+        extract_and_format_model_name("llama-2-13b-q6-k.gguf"),
+        "llama-2-13b"
+    );
+}
+
+#[test]
+fn test_extract_model_name_with_iq_quant() {
+    // Test IQ quantization format
+    assert_eq!(
+        extract_and_format_model_name("mistral-7b-IQ3_XS.gguf"),
+        "mistral-7b"
+    );
+}
+
+#[test]
+fn test_extract_model_name_without_gguf() {
+    // Test non-GGUF model names (e.g., cloud providers)
+    assert_eq!(extract_and_format_model_name("gpt-4-turbo"), "gpt-4-turbo");
+    assert_eq!(
+        extract_and_format_model_name("moonshot-v1-8k"),
+        "moonshot-v1-8k"
+    );
+}
+
+#[test]
+fn test_extract_model_name_kebab_case_conversion() {
+    // Test underscore to kebab-case conversion
+    assert_eq!(
+        extract_and_format_model_name("my_model_name"),
+        "my-model-name"
+    );
+}
+
+#[test]
+fn test_extract_model_name_uppercase_to_lowercase() {
+    // Test case conversion
+    assert_eq!(extract_and_format_model_name("MyModelName"), "mymodelname");
 }
