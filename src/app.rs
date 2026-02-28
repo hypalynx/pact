@@ -217,16 +217,29 @@ impl App {
         let available_width = (self.messages_rect.width.saturating_sub(4)) as usize;
 
         for msg in &self.messages {
-            // Account for thinking tokens (if present)
-            if let Some(thinking) = &msg.thinking {
-                let wrapped = wrap_text(thinking, available_width);
-                total_lines += wrapped.len();
-                // Blank line between thinking and response
-                total_lines += 1;
+            if msg.role == "user" {
+                // User messages have top and bottom padding lines
+                total_lines += 1; // top padding
+                if msg.is_tool_result {
+                    total_lines += 1; // tool result line
+                } else {
+                    let wrapped = wrap_text(&msg.text, available_width);
+                    total_lines += wrapped.len();
+                }
+                total_lines += 1; // bottom padding
+            } else {
+                // Assistant messages
+                // Account for thinking tokens (if present)
+                if let Some(thinking) = &msg.thinking {
+                    let wrapped = wrap_text(thinking, available_width);
+                    total_lines += wrapped.len();
+                    // Blank line between thinking and response
+                    total_lines += 1;
+                }
+                // Account for message text
+                let wrapped = wrap_text(&msg.text, available_width);
+                total_lines += wrapped.len() + 1; // +1 for blank line after message
             }
-            // Account for message text
-            let wrapped = wrap_text(&msg.text, available_width);
-            total_lines += wrapped.len() + 1; // +1 for blank line after message
         }
 
         // Account for pending thinking tokens (if streaming)

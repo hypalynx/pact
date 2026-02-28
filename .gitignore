@@ -2,3 +2,5 @@
 api.log
 pact-*
 .cargo/
+coverage.txt
+coverage.json

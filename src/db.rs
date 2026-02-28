@@ -2,7 +2,7 @@ use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 
 pub struct Db {
-    conn: Connection,
+    pub conn: Connection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +22,18 @@ impl Db {
     pub fn open() -> Result<Self> {
         let path = crate::utils::db_path();
         let conn = Connection::open(path)?;
+
+        // Enable WAL mode and optimize for CLI usage
+        conn.execute_batch(
+            r#"
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA cache_size = -4000;
+            PRAGMA foreign_keys = ON;
+            PRAGMA analysis_limit = 400;
+            "#,
+        )?;
+
         Ok(Db { conn })
     }
 
@@ -50,6 +62,9 @@ impl Db {
             );
             "#,
         )?;
+
+        // Run PRAGMA optimize to analyze tables if they have any data
+        self.conn.execute_batch("PRAGMA optimize;")?;
         Ok(())
     }
 
