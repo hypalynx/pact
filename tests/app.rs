@@ -1,8 +1,10 @@
 use pact::app::App;
+use pact::db::Db;
 use pact::llm::Message;
 use ratatui::layout::Rect;
+use rusqlite::Connection;
 
-/// Create a test app with mock message buffer
+/// Create a test app with in-memory database (no database side effects)
 fn create_test_app() -> App {
     let app = App::new(
         false,
@@ -12,7 +14,33 @@ fn create_test_app() -> App {
         "build".to_string(),
         Default::default(),
     );
+
+    // Replace the real database with an in-memory one for testing
+    let mut app = app;
+    match create_temp_db() {
+        Ok(db) => app.db = Some(db),
+        Err(_) => app.db = None, // Graceful fallback
+    }
     app
+}
+
+/// Create an in-memory SQLite database for tests (no real database writes)
+fn create_temp_db() -> Result<Db, rusqlite::Error> {
+    let conn = Connection::open_in_memory()?;
+
+    conn.execute_batch(
+        r#"
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA cache_size = -4000;
+        PRAGMA foreign_keys = ON;
+        PRAGMA analysis_limit = 400;
+        "#,
+    )?;
+
+    let db = Db { conn };
+    db.init_schema()?;
+    Ok(db)
 }
 
 /// Helper to add messages to app
