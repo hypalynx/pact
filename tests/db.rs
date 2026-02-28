@@ -234,8 +234,14 @@ fn test_save_api_log_with_all_fields() {
     let full_response = r#"{"full":"data"}"#;
     let error = "Test error";
 
-    db.save_api_log(request, Some(response), Some(full_response), 150, Some(error))
-        .expect("Failed to save API log");
+    db.save_api_log(
+        request,
+        Some(response),
+        Some(full_response),
+        150,
+        Some(error),
+    )
+    .expect("Failed to save API log");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
     assert_eq!(logs.len(), 1);
@@ -313,7 +319,8 @@ fn test_multiple_messages_with_mixed_types() {
 
     db.save_message(&user_msg).expect("Failed to save message");
     db.save_message(&tool_msg).expect("Failed to save message");
-    db.save_message(&assistant_msg).expect("Failed to save message");
+    db.save_message(&assistant_msg)
+        .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 3);

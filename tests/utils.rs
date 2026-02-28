@@ -1,4 +1,4 @@
-use pact::utils::{format_tokens, get_pwd_display, get_git_branch};
+use pact::utils::{format_tokens, get_git_branch, get_pwd_display};
 
 #[test]
 fn test_format_tokens_under_1000() {
@@ -44,9 +44,7 @@ fn test_get_pwd_display() {
 #[test]
 fn test_get_pwd_display_not_error() {
     // Ensure it doesn't panic and returns something
-    let result = std::panic::catch_unwind(|| {
-        get_pwd_display()
-    });
+    let result = std::panic::catch_unwind(|| get_pwd_display());
     assert!(result.is_ok());
 }
 
@@ -79,7 +77,7 @@ fn test_get_git_branch() {
     // Both are valid, we just verify it doesn't panic
     match branch {
         Some(b) => assert!(!b.is_empty()),
-        None => {}, // Also valid if not in a git repo
+        None => {} // Also valid if not in a git repo
     }
 }
 

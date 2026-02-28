@@ -1,5 +1,5 @@
-use pact::config::{Config, ApiConfig, UiConfig, Mode};
 use indexmap::IndexMap;
+use pact::config::{ApiConfig, Config, Mode, UiConfig};
 
 #[test]
 fn test_api_config_defaults() {
@@ -87,7 +87,14 @@ fn test_ui_config_modes_order() {
     modes.insert("third".to_string(), Mode::default());
 
     let keys: Vec<&String> = modes.keys().collect();
-    assert_eq!(keys, vec![&"first".to_string(), &"second".to_string(), &"third".to_string()]);
+    assert_eq!(
+        keys,
+        vec![
+            &"first".to_string(),
+            &"second".to_string(),
+            &"third".to_string()
+        ]
+    );
 }
 
 #[test]
@@ -135,11 +142,14 @@ fn test_api_config_with_custom_values() {
 #[test]
 fn test_ui_config_with_custom_modes() {
     let mut modes = IndexMap::new();
-    modes.insert("custom".to_string(), Mode {
-        system_prompt: Some("Custom prompt".to_string()),
-        temperature: Some(0.8),
-        color: Some("yellow".to_string()),
-    });
+    modes.insert(
+        "custom".to_string(),
+        Mode {
+            system_prompt: Some("Custom prompt".to_string()),
+            temperature: Some(0.8),
+            color: Some("yellow".to_string()),
+        },
+    );
 
     let config = UiConfig {
         default_mode: "custom".to_string(),

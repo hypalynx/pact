@@ -1,4 +1,4 @@
-use pact::tools::{get_tool_definitions, execute_tool, ToolCall};
+use pact::tools::{ToolCall, execute_tool, get_tool_definitions};
 use serde_json::Value;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -34,7 +34,9 @@ fn test_read_tool_definition() {
 fn test_execute_read_tool_success() {
     let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
     let content = "Test file content";
-    temp_file.write_all(content.as_bytes()).expect("Failed to write to temp file");
+    temp_file
+        .write_all(content.as_bytes())
+        .expect("Failed to write to temp file");
     let path = temp_file.path().to_string_lossy().to_string();
 
     let mut args = serde_json::Map::new();
@@ -53,7 +55,10 @@ fn test_execute_read_tool_success() {
 #[test]
 fn test_execute_read_tool_relative_path() {
     let mut args = serde_json::Map::new();
-    args.insert("filePath".to_string(), Value::String("relative/path".to_string()));
+    args.insert(
+        "filePath".to_string(),
+        Value::String("relative/path".to_string()),
+    );
 
     let tool_call = ToolCall {
         name: "read".to_string(),
@@ -80,7 +85,10 @@ fn test_execute_read_tool_missing_filepath() {
 #[test]
 fn test_execute_read_tool_nonexistent_file() {
     let mut args = serde_json::Map::new();
-    args.insert("filePath".to_string(), Value::String("/nonexistent/path/to/file.txt".to_string()));
+    args.insert(
+        "filePath".to_string(),
+        Value::String("/nonexistent/path/to/file.txt".to_string()),
+    );
 
     let tool_call = ToolCall {
         name: "read".to_string(),
@@ -96,7 +104,9 @@ fn test_execute_read_tool_large_file() {
     let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
     // Create a file larger than MAX_FILE_SIZE (65536 bytes)
     let large_content = "x".repeat(70000);
-    temp_file.write_all(large_content.as_bytes()).expect("Failed to write to temp file");
+    temp_file
+        .write_all(large_content.as_bytes())
+        .expect("Failed to write to temp file");
     let path = temp_file.path().to_string_lossy().to_string();
 
     let mut args = serde_json::Map::new();
@@ -154,5 +164,8 @@ fn test_tool_call_clone() {
 
     let cloned = tool.clone();
     assert_eq!(cloned.name, tool.name);
-    assert_eq!(cloned.args.get("test").and_then(|v| v.as_str()), Some("value"));
+    assert_eq!(
+        cloned.args.get("test").and_then(|v| v.as_str()),
+        Some("value")
+    );
 }
