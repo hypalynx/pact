@@ -32,6 +32,7 @@ fn main() -> std::io::Result<()> {
     let default_mode_config = config.ui.modes.get(&config.ui.default_mode).cloned();
     let temperature = default_mode_config.as_ref().and_then(|m| m.temperature);
     let modes_config = config.ui.modes.clone();
+    let agents_context = config.load_agents_context();
 
     let server_info = utils::fetch_server_info(&config.api.endpoint);
 
@@ -44,6 +45,7 @@ fn main() -> std::io::Result<()> {
         temperature,
         config.ui.default_mode.clone(),
         modes_config,
+        agents_context,
     );
     // Load history from SQLite database (for up/down arrow navigation)
     // Don't load previous messages - start with a fresh session

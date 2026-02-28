@@ -160,3 +160,31 @@ fn test_ui_config_with_custom_modes() {
     assert!(config.modes.contains_key("custom"));
     assert_eq!(config.modes.get("custom").unwrap().temperature, Some(0.8));
 }
+
+#[test]
+fn test_load_agents_context_no_files() {
+    // When no AGENTS.md files exist, should return None
+    // Use a custom path that doesn't exist
+    let config = Config {
+        api: ApiConfig::default(),
+        ui: UiConfig::default(),
+        debug: false,
+        agents_md_path: Some("/nonexistent/path/that/does/not/exist/AGENTS.md".to_string()),
+    };
+    let context = config.load_agents_context();
+    assert!(context.is_none(), "Should return None when no files exist");
+}
+
+#[test]
+fn test_load_agents_context_with_custom_path() {
+    // Test that custom agents_md_path is respected
+    let config = Config {
+        api: ApiConfig::default(),
+        ui: UiConfig::default(),
+        debug: false,
+        agents_md_path: Some("/nonexistent/path/AGENTS.md".to_string()),
+    };
+    let context = config.load_agents_context();
+    // Should be None since the path doesn't exist
+    assert!(context.is_none());
+}

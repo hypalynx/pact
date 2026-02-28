@@ -11,6 +11,7 @@ pub struct Config {
     pub ui: UiConfig,
     #[serde(default)]
     pub debug: bool,
+    pub agents_md_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,5 +126,39 @@ impl Config {
             modes.insert(name.clone(), mode.clone());
         }
         modes
+    }
+
+    pub fn load_agents_context(&self) -> Option<String> {
+        let mut parts = Vec::new();
+
+        // Load global AGENTS.md (or custom path)
+        let global_path = if let Some(custom_path) = &self.agents_md_path {
+            PathBuf::from(custom_path)
+        } else {
+            let mut path = dirs::config_dir().unwrap_or_else(|| {
+                let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+                home.push(".config");
+                home
+            });
+            path.push("pact");
+            path.push("AGENTS.md");
+            path
+        };
+
+        if let Ok(content) = fs::read_to_string(&global_path) {
+            parts.push(content);
+        }
+
+        // Load local AGENTS.md (in current directory)
+        let local_path = PathBuf::from("AGENTS.md");
+        if let Ok(content) = fs::read_to_string(&local_path) {
+            parts.push(content);
+        }
+
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n\n"))
+        }
     }
 }

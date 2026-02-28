@@ -14,6 +14,7 @@ fn create_test_app() -> App {
         None,
         "build".to_string(),
         Default::default(),
+        None,
     );
 
     let mut app = app;

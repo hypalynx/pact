@@ -1,49 +1,9 @@
 # Pact Development Plan
 
-## Next In Line
 
-Items raised in this session that still need completion:
-
-1. **Selection highlighting in UI** - When text is selected and copied to clipboard, visually highlight the selected text area in the message display (currently just shows "Copied to clipboard!" message). This requires refactoring the text rendering to track and display selected character ranges.
-
----
-
-## Previous Development Plan (Archived Content)
-
-# Pact Development Roadmap
-
-## Quick Reference: What's Next
-
-### ✅ Phase 0: Communication Protocol (COMPLETED Feb 27, 2026)
-- ✅ Switched endpoint to `/v1/chat/completions` (OpenAI format)
-- ✅ Fixed system message handling (dedicated role: system)
-- ✅ Fixed token field names (prompt_tokens/completion_tokens)
-- ✅ Added reasoning_content streaming (`LlmEvent::Thinking`)
-- ✅ Kept both tool call parsers (Qwen text format + OpenAI structured)
-- ✅ Improved tool descriptions and renamed path → filePath
-
-### ✅ Phase 1: SQLite Migration (COMPLETED Feb 27, 2026)
-- ✅ Added `rusqlite` with bundled SQLite
-- ✅ Created `src/db.rs` with schema and CRUD operations
-- ✅ Database location: `~/.local/share/pact/pact.db`
-- ✅ User messages saved to DB on submit
-- ✅ Assistant messages saved to DB on Done
-- ✅ API logs saved to DB (request_body, duration_ms, error_message)
-- ✅ Removed file-based `api.log` writes, now using `LlmEvent::ApiLog`
-- ✅ All tests passing
 
 ### Current Focus: Debug UI & Control Panel (Next)
 **Priority:** Implement debug view for querying API logs and message history
-
-1. **Remaining Debug Infrastructure**
-   - [ ] Add debug UI inside pact (accessible from modal or switchable view)
-   - [ ] Query recent API logs from DB
-   - [ ] Control panel UI for cache/log management
-
-2. **Message History**
-   - [ ] Load messages from DB on startup (for conversation restoration)
-   - [ ] Display message count and usage in status bar
-   - [ ] Option to clear/export message history
 
 4. **Other tasks**
    - [ ] Read user AGENTS.md and AGENTS.md for files in projects
@@ -56,6 +16,16 @@ Items raised in this session that still need completion:
      a good thing i.e will we still receive input from the LLM?
      lol)
    - [ ] markdown doesn't process single *formatting* as italic.
+   - [ ] Mac OS doesn't use ~/.config/pact/pact.yaml for it's
+     config/data location and instead uses ~/Application
+     Support/Library/pact/pact.yaml.. it should still use .config
+   - [ ] user input should line wrap instead of going off the
+     page
+   - [ ] allow API keys to be defined from env vars or..
+     something that means you can avoid putting it in config
+     (which is committed to dotfiles..)
+   - [ ] Ctrl + c confirm before quitting the application
+   - [ ] provide a --resume flag to resume previous sessions
 
 5. **Start writing tests for the parser**
 

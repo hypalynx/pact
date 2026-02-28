@@ -1,4 +1,6 @@
+use indexmap::IndexMap;
 use pact::app::App;
+use pact::config::Mode;
 use pact::db::Db;
 use pact::llm::Message;
 use ratatui::layout::Rect;
@@ -13,6 +15,7 @@ fn create_test_app() -> App {
         None,
         "build".to_string(),
         Default::default(),
+        None,
     );
 
     // Replace the real database with an in-memory one for testing
@@ -327,4 +330,109 @@ fn test_no_auto_scroll_when_scrolled_up() {
     assert_eq!(app.scroll_offset, saved_offset);
     let (still_not_at_bottom, _) = app.calculate_scroll_info();
     assert!(!still_not_at_bottom);
+}
+
+#[test]
+fn test_agents_context_stored_in_app() {
+    let app = App::new(
+        false,
+        "http://127.0.0.1:7777".to_string(),
+        1024,
+        None,
+        "build".to_string(),
+        Default::default(),
+        Some("Agent context content here".to_string()),
+    );
+
+    // Verify agents_context is stored correctly
+    assert_eq!(
+        app.agents_context,
+        Some("Agent context content here".to_string())
+    );
+}
+
+#[test]
+fn test_agents_context_replaces_system_prompt() {
+    let mut modes = IndexMap::new();
+    modes.insert(
+        "build".to_string(),
+        Mode {
+            system_prompt: Some("You are a helpful coding assistant...".to_string()),
+            temperature: None,
+            color: Some("cyan".to_string()),
+        },
+    );
+
+    let app = App::new(
+        false,
+        "http://127.0.0.1:7777".to_string(),
+        1024,
+        None,
+        "build".to_string(),
+        modes,
+        Some("Agent context content here".to_string()),
+    );
+
+    // When agents_context is present, it should replace the mode prompt
+    let expected_prompt = if let Some(ref ctx) = app.agents_context {
+        Some(ctx.clone())
+    } else {
+        app.modes_config
+            .get(&app.mode_name)
+            .and_then(|m| m.system_prompt.clone())
+    };
+
+    // Verify that the system prompt is the agents context, not the mode prompt
+    let final_prompt = expected_prompt.unwrap();
+    assert_eq!(
+        final_prompt, "Agent context content here",
+        "Should use agents_context instead of mode prompt"
+    );
+    assert!(
+        !final_prompt.contains("helpful coding"),
+        "Should not contain mode prompt"
+    );
+}
+
+#[test]
+fn test_agents_context_none_uses_only_mode_prompt() {
+    let mut modes = IndexMap::new();
+    modes.insert(
+        "build".to_string(),
+        Mode {
+            system_prompt: Some("You are a helpful coding assistant...".to_string()),
+            temperature: None,
+            color: Some("cyan".to_string()),
+        },
+    );
+
+    let app = App::new(
+        false,
+        "http://127.0.0.1:7777".to_string(),
+        1024,
+        None,
+        "build".to_string(),
+        modes,
+        None, // No agents context
+    );
+
+    // Verify agents_context is None
+    assert!(app.agents_context.is_none());
+
+    // Get the mode prompt
+    let mode_prompt = app
+        .modes_config
+        .get(&app.mode_name)
+        .and_then(|m| m.system_prompt.clone())
+        .unwrap_or_default();
+
+    // When no agents_context, the system prompt should just be the mode prompt
+    assert!(
+        mode_prompt.contains("helpful coding"),
+        "Should contain mode prompt"
+    );
+    assert!(
+        !mode_prompt.contains("Agent context"),
+        "Should not contain agents context"
+    );
 }

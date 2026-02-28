@@ -59,6 +59,7 @@ pub struct App {
     pub debug_expand_scroll_x: usize,
     pub progress: Option<f32>,
     pub all_line_texts: Vec<String>,
+    pub agents_context: Option<String>,
 }
 
 impl App {
@@ -69,6 +70,7 @@ impl App {
         temperature: Option<f32>,
         mode_name: String,
         modes_config: IndexMap<String, crate::config::Mode>,
+        agents_context: Option<String>,
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let available_modes: Vec<String> = modes_config.keys().cloned().collect();
@@ -127,6 +129,7 @@ impl App {
             debug_expand_scroll_x: 0,
             progress: None,
             all_line_texts: Vec::new(),
+            agents_context,
         }
     }
 
@@ -166,10 +169,15 @@ impl App {
         let endpoint = self.api_endpoint.clone();
         let max_tokens = self.max_tokens;
         let temperature = self.temperature;
-        let system_prompt = self
-            .modes_config
-            .get(&self.mode_name)
-            .and_then(|m| m.system_prompt.clone());
+
+        // Use agents_context as system prompt if available, otherwise use mode's system prompt
+        let system_prompt = if let Some(ref ctx) = self.agents_context {
+            Some(ctx.clone())
+        } else {
+            self.modes_config
+                .get(&self.mode_name)
+                .and_then(|m| m.system_prompt.clone())
+        };
 
         let model_name = self.model_name.clone();
         std::thread::spawn(move || {
