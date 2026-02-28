@@ -323,8 +323,10 @@ fn draw_input(app: &App, frame: &mut Frame) {
         vertical: 1,
     });
 
-    let input =
-        Paragraph::new(app.input.clone()).style(Style::default().fg(Color::White).bg(Color::Black));
+    // Parse input to colorize file picker references
+    let spans = colorize_input(&app.input);
+    let input_line = Line::from(spans);
+    let input = Paragraph::new(input_line).style(Style::default().bg(Color::Black));
     frame.render_widget(input, inner);
 
     if app.active_llm_calls == 0 {
@@ -335,6 +337,57 @@ fn draw_input(app: &App, frame: &mut Frame) {
         };
         frame.set_cursor_position(cursor_pos);
     }
+}
+
+fn colorize_input(input: &str) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut chars = input.chars().peekable();
+    let mut current = String::new();
+
+    while let Some(ch) = chars.next() {
+        if ch == '@' {
+            // Push any accumulated text before the @
+            if !current.is_empty() {
+                spans.push(Span::styled(
+                    current.clone(),
+                    Style::default().fg(Color::White),
+                ));
+                current.clear();
+            }
+
+            // Collect the word after @
+            let mut word = String::from("@");
+            while let Some(&next_ch) = chars.peek() {
+                if next_ch.is_alphanumeric()
+                    || next_ch == '_'
+                    || next_ch == '.'
+                    || next_ch == '/'
+                    || next_ch == '-'
+                {
+                    word.push(next_ch);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+
+            // Add the @word in yellow
+            spans.push(Span::styled(word, Style::default().fg(Color::Yellow)));
+        } else {
+            current.push(ch);
+        }
+    }
+
+    // Push any remaining text
+    if !current.is_empty() {
+        spans.push(Span::styled(current, Style::default().fg(Color::White)));
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::raw(""));
+    }
+
+    spans
 }
 
 fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {

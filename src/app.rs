@@ -14,7 +14,7 @@ pub enum PanelState {
 
 pub struct FilePicker {
     pub query: String,
-    pub at_start: usize,      // byte offset in `input` where @ was typed
+    pub at_start: usize, // byte offset in `input` where @ was typed
     pub all_entries: Vec<String>,
     pub filtered: Vec<String>,
     pub selected: usize,
@@ -52,10 +52,7 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<String>, depth: usize) {
         if path.is_dir() {
             walk_dir(&path, out, depth + 1);
         } else {
-            let rel = path
-                .to_string_lossy()
-                .trim_start_matches("./")
-                .to_string();
+            let rel = path.to_string_lossy().trim_start_matches("./").to_string();
             out.push(rel);
         }
     }
@@ -111,6 +108,7 @@ pub struct App {
     pub all_line_texts: Vec<String>,
     pub agents_context: Option<String>,
     pub file_picker: Option<FilePicker>,
+    pub file_picker_map: IndexMap<String, String>, // Map filename -> full relative path
 }
 
 impl App {
@@ -183,6 +181,7 @@ impl App {
             all_line_texts: Vec::new(),
             agents_context,
             file_picker: None,
+            file_picker_map: IndexMap::new(),
         }
     }
 
@@ -190,7 +189,9 @@ impl App {
         if self.input.trim().is_empty() {
             return;
         }
-        let text = std::mem::take(&mut self.input);
+        let mut text = std::mem::take(&mut self.input);
+        // Resolve file picker references (@filename -> ./relative/path)
+        text = self.resolve_file_picker_refs(&text);
         self.history.push(text.clone());
         let msg = Message {
             role: "user".to_string(),
@@ -208,6 +209,18 @@ impl App {
         self.input = String::new();
         self.cursor_pos = 0;
         self.send_to_llm();
+    }
+
+    fn resolve_file_picker_refs(&self, text: &str) -> String {
+        let mut result = text.to_string();
+        // Replace @filename patterns with actual paths from the mapping
+        for (filename, path) in &self.file_picker_map {
+            let pattern = format!("@{}", filename);
+            if result.contains(&pattern) {
+                result = result.replace(&pattern, path);
+            }
+        }
+        result
     }
 
     pub fn send_to_llm(&mut self) {
@@ -741,13 +754,26 @@ impl App {
             && let Some(path) = picker.filtered.get(picker.selected)
             && picker.at_start <= self.input.len()
         {
-            // Replace from at_start to cursor_pos with the selected path
+            // Get the filename (for display) and full relative path (for actual use)
+            let filename = std::path::Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
+
+            // Format: "@filename" to display nicely
+            let display_text = format!("@{}", filename);
+
+            // Store mapping from filename to full path
+            self.file_picker_map
+                .insert(filename.to_string(), path.clone());
+
+            // Replace from at_start to cursor_pos with display text
             let at_start = picker.at_start;
             let cursor_pos = self.cursor_pos;
 
             self.input.drain(at_start..cursor_pos);
-            self.input.insert_str(at_start, path);
-            self.cursor_pos = at_start + path.len();
+            self.input.insert_str(at_start, &display_text);
+            self.cursor_pos = at_start + display_text.len();
         }
     }
 }

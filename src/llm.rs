@@ -85,13 +85,21 @@ pub fn call_llm(
 
     // Add conversation messages
     for m in messages {
-        // For tool results, send the actual content instead of the summary
-        let content = if m.is_tool_result {
-            m.tool_result_content.as_deref().unwrap_or(&m.text)
+        let msg = if m.is_tool_result {
+            // Tool results: use multi-part content format to preserve context
+            let tool_output = m.tool_result_content.as_deref().unwrap_or(&m.text);
+            json!({
+                "role": m.role,
+                "content": [
+                    { "type": "text", "text": m.text },
+                    { "type": "text", "text": tool_output }
+                ]
+            })
         } else {
-            &m.text
+            // Regular messages: single string content
+            json!({ "role": m.role, "content": m.text })
         };
-        msg_payload.push(json!({ "role": m.role, "content": content }));
+        msg_payload.push(msg);
     }
 
     let mut body = json!({

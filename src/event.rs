@@ -119,6 +119,29 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.total_output_tokens += output_tokens;
         }
         LlmEvent::ToolCall { name, args } => {
+            // First, save any pending thinking/response as an assistant message
+            // This preserves the LLM's thought process before the tool call
+            let text = std::mem::take(&mut app.pending_response);
+            let thinking = if app.pending_thinking.is_empty() {
+                None
+            } else {
+                Some(std::mem::take(&mut app.pending_thinking))
+            };
+            if !text.is_empty() || thinking.is_some() {
+                let msg = Message {
+                    role: "assistant".to_string(),
+                    text,
+                    is_tool_result: false,
+                    thinking,
+                    tool_result_content: None,
+                };
+                app.messages.push(msg.clone());
+                if let Some(db) = &app.db {
+                    let _ = db.save_message(&msg);
+                }
+            }
+
+            // Execute the tool and add result
             let tool_call = tools::ToolCall { name, args };
             let (summary, content) = tools::execute_tool(&tool_call);
             app.messages.push(Message {
@@ -162,9 +185,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
 /// Handle keyboard events
 pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     // Reset exit confirmation on any keypress other than Ctrl+C
-    if !(matches!(key.code, KeyCode::Char('c'))
-        && key.modifiers.contains(KeyModifiers::CONTROL))
-    {
+    if !(matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL)) {
         app.reset_exit_confirmation();
     }
 
@@ -405,7 +426,7 @@ fn handle_file_picker_key(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Enter | KeyCode::Tab => {
             app.file_picker_select();
         }
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             // Remove @ from input and close picker
             if let Some(picker) = &app.file_picker {
                 let at_start = picker.at_start;

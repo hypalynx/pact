@@ -347,3 +347,90 @@ fn test_active_llm_calls_counter_error_resets_properly() {
     // Now counter reaches 0
     assert_eq!(app.active_llm_calls, 0);
 }
+
+#[test]
+fn test_tool_call_preserves_thinking_content() {
+    let mut app = create_test_app();
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+
+    // Simulate: assistant generates thinking then makes a tool call
+    app.active_llm_calls = 1;
+    app.pending_thinking = "I need to read the file to answer this.".to_string();
+    app.pending_response = "Let me check that for you.".to_string();
+
+    let initial_count = app.messages.len();
+
+    // LLM decides to use a tool (use an existing file - Cargo.toml)
+    handle_llm_event(
+        &mut app,
+        LlmEvent::ToolCall {
+            name: "read".to_string(),
+            args: serde_json::from_str(r#"{"filePath": "Cargo.toml"}"#).unwrap(),
+        },
+    );
+
+    // Should have added TWO messages: assistant's thinking/response + tool result
+    assert_eq!(app.messages.len(), initial_count + 2);
+
+    // First message should be the assistant's response with thinking
+    let assistant_msg = &app.messages[initial_count];
+    assert_eq!(assistant_msg.role, "assistant");
+    assert_eq!(assistant_msg.text, "Let me check that for you.");
+    assert_eq!(
+        assistant_msg.thinking,
+        Some("I need to read the file to answer this.".to_string())
+    );
+    assert!(!assistant_msg.is_tool_result);
+
+    // Second message should be the tool result
+    let tool_msg = &app.messages[initial_count + 1];
+    assert_eq!(tool_msg.role, "user");
+    assert!(tool_msg.is_tool_result);
+    assert!(tool_msg.text.contains("Cargo.toml"));
+
+    // Pending content should be cleared
+    assert!(app.pending_response.is_empty());
+    assert!(app.pending_thinking.is_empty());
+
+    // A new LLM call should have started
+    assert_eq!(app.active_llm_calls, 2);
+}
+
+#[test]
+fn test_tool_call_without_pending_content() {
+    let mut app = create_test_app();
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+
+    // No pending content (e.g., tool call at start of response)
+    app.active_llm_calls = 1;
+    app.pending_thinking.clear();
+    app.pending_response.clear();
+
+    let initial_count = app.messages.len();
+
+    handle_llm_event(
+        &mut app,
+        LlmEvent::ToolCall {
+            name: "read".to_string(),
+            args: serde_json::from_str(r#"{"filePath": "Cargo.toml"}"#).unwrap(),
+        },
+    );
+
+    // Should only add ONE message (just the tool result, no empty assistant message)
+    assert_eq!(app.messages.len(), initial_count + 1);
+
+    // The only new message should be the tool result
+    let tool_msg = &app.messages[initial_count];
+    assert_eq!(tool_msg.role, "user");
+    assert!(tool_msg.is_tool_result);
+}

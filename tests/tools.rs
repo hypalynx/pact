@@ -6,13 +6,14 @@ use tempfile::NamedTempFile;
 #[test]
 fn test_get_tool_definitions() {
     let defs = get_tool_definitions();
-    assert_eq!(defs.len(), 1);
+    assert_eq!(defs.len(), 3); // Read, Glob, Grep
 
+    // Check first tool is Read
     let tool = &defs[0];
     assert_eq!(tool.get("type").and_then(|v| v.as_str()), Some("function"));
 
     let func = tool.get("function").unwrap();
-    assert_eq!(func.get("name").and_then(|v| v.as_str()), Some("read"));
+    assert_eq!(func.get("name").and_then(|v| v.as_str()), Some("Read"));
     assert!(func.get("description").is_some());
     assert!(func.get("parameters").is_some());
 }
@@ -20,7 +21,18 @@ fn test_get_tool_definitions() {
 #[test]
 fn test_read_tool_definition() {
     let defs = get_tool_definitions();
-    let tool = &defs[0];
+    // Find the Read tool
+    let tool = defs
+        .iter()
+        .find(|t| {
+            t.get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .map(|n| n == "Read")
+                .unwrap_or(false)
+        })
+        .expect("Read tool not found");
+
     let func = tool.get("function").unwrap();
 
     let params = func.get("parameters").unwrap();
@@ -54,10 +66,11 @@ fn test_execute_read_tool_success() {
 
 #[test]
 fn test_execute_read_tool_relative_path() {
+    // Test with a relative path that doesn't exist
     let mut args = serde_json::Map::new();
     args.insert(
         "filePath".to_string(),
-        Value::String("relative/path".to_string()),
+        Value::String("./nonexistent_test_file.txt".to_string()),
     );
 
     let tool_call = ToolCall {
@@ -66,7 +79,8 @@ fn test_execute_read_tool_relative_path() {
     };
 
     let (error, _) = execute_tool(&tool_call);
-    assert!(error.contains("Error") && error.contains("absolute"));
+    // Should get an error about the file not being found, not about path type
+    assert!(error.contains("Error reading file"));
 }
 
 #[test]

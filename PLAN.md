@@ -24,9 +24,11 @@
    - [ ] provide a --resume flag to resume previous sessions
    - [ ] make sure progress % is shown in the status bar if
      available
-   - [ ] "Reading <filename>" replaces thinking output in the
-     message history/buffer/section but it should be appended
-     sequentially to the message history/buffer/section.
+    - [x] "Reading <filename>" replaces thinking output in the
+      message history/buffer/section but it should be appended
+      sequentially to the message history/buffer/section.
+   - Safeguarding blocks i.e when the LLM tries to read from
+     outside the project directory.
 
 5. **Start writing tests for the parser**
 
@@ -40,7 +42,13 @@
     `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` => `Qwen3 Coder`
   - [ ] add vertical margin to user messages in the messages
     buffer/section
-  - [ ] @file completion
+  - [ ] esc with no user input should cancel current
+    inference/api calls (with a confirmation status message so
+    you have to press twice to avoid accidental cancels)
+  - [ ] stop hook or.. well a stop hook that is smart i.e when
+    the llm/agent has finished we run the verify script IF an
+    edit/file has been created kind of thing (so tracking tool
+    calls used since last user prompt)
 
 ---
 
