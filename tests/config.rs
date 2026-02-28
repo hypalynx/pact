@@ -1,0 +1,152 @@
+use pact::config::{Config, ApiConfig, UiConfig, Mode};
+use indexmap::IndexMap;
+
+#[test]
+fn test_api_config_defaults() {
+    let config = ApiConfig::default();
+    assert_eq!(config.endpoint, "http://127.0.0.1:7777");
+    assert_eq!(config.max_tokens, 1024);
+    assert!(config.api_key.is_none());
+}
+
+#[test]
+fn test_ui_config_defaults() {
+    let config = UiConfig::default();
+    assert_eq!(config.default_mode, "build");
+    assert!(config.modes.is_empty());
+}
+
+#[test]
+fn test_config_defaults() {
+    let config = Config::default();
+    assert_eq!(config.api.endpoint, "http://127.0.0.1:7777");
+    assert_eq!(config.api.max_tokens, 1024);
+    assert_eq!(config.ui.default_mode, "build");
+    assert!(!config.debug);
+}
+
+#[test]
+fn test_mode_defaults() {
+    let mode = Mode::default();
+    assert!(mode.system_prompt.is_none());
+    assert!(mode.temperature.is_none());
+    assert!(mode.color.is_none());
+}
+
+#[test]
+fn test_mode_with_values() {
+    let mode = Mode {
+        system_prompt: Some("Test prompt".to_string()),
+        temperature: Some(0.5),
+        color: Some("blue".to_string()),
+    };
+    assert_eq!(mode.system_prompt, Some("Test prompt".to_string()));
+    assert_eq!(mode.temperature, Some(0.5));
+    assert_eq!(mode.color, Some("blue".to_string()));
+}
+
+#[test]
+fn test_config_load_no_file() {
+    // Config::load() checks if config file exists
+    // When it doesn't exist, it should return defaults
+    let config = Config::load();
+    assert_eq!(config.api.endpoint, "http://127.0.0.1:7777");
+    assert_eq!(config.ui.default_mode, "build");
+    // Default modes should include "build" and "plan"
+    assert!(config.ui.modes.contains_key("build"));
+    assert!(config.ui.modes.contains_key("plan"));
+}
+
+#[test]
+fn test_config_has_default_build_mode() {
+    let config = Config::load();
+    let build_mode = config.ui.modes.get("build");
+    assert!(build_mode.is_some());
+    let build = build_mode.unwrap();
+    assert!(build.system_prompt.is_some());
+    assert!(build.color.is_some());
+}
+
+#[test]
+fn test_config_has_default_plan_mode() {
+    let config = Config::load();
+    let plan_mode = config.ui.modes.get("plan");
+    assert!(plan_mode.is_some());
+    let plan = plan_mode.unwrap();
+    assert!(plan.system_prompt.is_some());
+    assert_eq!(plan.temperature, Some(0.5));
+    assert!(plan.color.is_some());
+}
+
+#[test]
+fn test_ui_config_modes_order() {
+    // Modes should maintain insertion order (IndexMap)
+    let mut modes = IndexMap::new();
+    modes.insert("first".to_string(), Mode::default());
+    modes.insert("second".to_string(), Mode::default());
+    modes.insert("third".to_string(), Mode::default());
+
+    let keys: Vec<&String> = modes.keys().collect();
+    assert_eq!(keys, vec![&"first".to_string(), &"second".to_string(), &"third".to_string()]);
+}
+
+#[test]
+fn test_config_clone() {
+    let config = Config::default();
+    let cloned = config.clone();
+    assert_eq!(cloned.api.endpoint, config.api.endpoint);
+    assert_eq!(cloned.ui.default_mode, config.ui.default_mode);
+}
+
+#[test]
+fn test_mode_clone() {
+    let mode = Mode {
+        system_prompt: Some("Test".to_string()),
+        temperature: Some(0.7),
+        color: Some("red".to_string()),
+    };
+    let cloned = mode.clone();
+    assert_eq!(cloned.system_prompt, mode.system_prompt);
+    assert_eq!(cloned.temperature, mode.temperature);
+    assert_eq!(cloned.color, mode.color);
+}
+
+#[test]
+fn test_config_load_merges_modes() {
+    let config = Config::load();
+    // Should have at least the default modes
+    assert!(config.ui.modes.len() >= 2);
+    assert!(config.ui.modes.contains_key("build"));
+    assert!(config.ui.modes.contains_key("plan"));
+}
+
+#[test]
+fn test_api_config_with_custom_values() {
+    let config = ApiConfig {
+        endpoint: "http://custom:8000".to_string(),
+        max_tokens: 2048,
+        api_key: Some("test-key".to_string()),
+    };
+    assert_eq!(config.endpoint, "http://custom:8000");
+    assert_eq!(config.max_tokens, 2048);
+    assert_eq!(config.api_key, Some("test-key".to_string()));
+}
+
+#[test]
+fn test_ui_config_with_custom_modes() {
+    let mut modes = IndexMap::new();
+    modes.insert("custom".to_string(), Mode {
+        system_prompt: Some("Custom prompt".to_string()),
+        temperature: Some(0.8),
+        color: Some("yellow".to_string()),
+    });
+
+    let config = UiConfig {
+        default_mode: "custom".to_string(),
+        modes,
+    };
+
+    assert_eq!(config.default_mode, "custom");
+    assert!(config.modes.contains_key("custom"));
+    assert_eq!(config.modes.get("custom").unwrap().temperature, Some(0.8));
+}
