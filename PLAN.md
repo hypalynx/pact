@@ -451,3 +451,120 @@ CREATE TABLE debug_settings (
    - All-at-once (breaking change if loading old history)?
    - Gradual (support both formats)?
    - Just for new messages, old format grandfathered?
+
+---
+
+## Phase 3: Testability & Architecture Refactoring (Feb 28, 2026)
+
+### Current Test Coverage Status
+**Files with coverage:**
+- tools.rs: 100% ✅ (10 tests)
+- text.rs: 93% (12 tests)
+- db.rs: 83% (17 tests)
+- config.rs: 89% (14 tests)
+- utils.rs: 50% (10 tests)
+
+**Files with 0% coverage (need extraction):**
+- app.rs: 281 lines (state management, message handling)
+- llm.rs: 130 lines (API integration, SSE parsing)
+- main.rs: 161 lines (event loop, CLI)
+- ui.rs: 236 lines (terminal rendering)
+
+### Design Decisions
+
+#### 1. Server Compatibility: Restrict to llama.cpp
+- **Decision**: Only support OpenAI-compatible endpoints (llama.cpp servers)
+- **Benefit**: Standardized `/v1/chat/completions` format
+- **Impact**: Response format (SSE) is consistent across models; differences are in content only
+- **No need**: API format variance testing, endpoint routing logic
+
+#### 2. Model Targeting (Priority Order)
+- **Primary**: Qwen 3.5 30B A3B (reference implementation)
+- **Secondary**: Qwen 3.5 2B (when released)
+- **Also support**: Qwen 3 4B Instruct, gpt-oss-20b, Llama 3.2 1B, Qwen 3 1.7B
+- **Future**: Could spin up small models for integration tests (not yet)
+- **Benefit**: Narrows testing scope; most differences are Qwen-specific
+
+#### 3. API Log Recording: Add Model Tracking
+- **Current**: We hardcode `"model": "local"` in request; fetch actual model name at startup only
+- **Gap**: Don't record which model responded to each request
+- **Solution**: Add `model_name` column to `api_logs` table
+- **Benefit**:
+  - Build fixture dataset organized by model
+  - Query DB: `SELECT full_response FROM api_logs WHERE model_name = 'qwen-3.5-30b'`
+  - Real response data for testing (no guessing)
+
+#### 4. Test Fixtures: Collect First, Create Later
+- **Phase 1 (now)**: Record model in DB, accumulate real responses
+- **Phase 2 (later)**: Extract representative responses from DB → create fixtures
+- **Phase 3 (testing)**: Use fixtures for SSE parsing tests
+- **Benefit**: Fixtures based on actual data, not assumptions
+
+### Implementation Plan: Step 1 (Next)
+
+#### Step 1A: Make main.rs Thin + Extract Event Loop
+**Goal**: Separate CLI setup from state machine logic
+
+**Changes to main.rs:**
+1. Keep: Argument parsing, config loading, initialization
+2. Extract: Event handling logic → new function
+3. Event handler signature:
+   ```rust
+   fn handle_event(app: &mut App, event: Event) -> Result<()>
+   fn handle_llm_event(app: &mut App, event: LlmEvent) -> Result<()>
+   fn handle_key_event(app: &mut App, event: KeyEvent) -> Result<()>
+   fn handle_resize_event(app: &mut App, size: Size) -> Result<()>
+   ```
+4. Main loop becomes: `loop { poll() → handle_event() → render() }`
+
+**Testing approach:**
+- Create test App state with known conditions
+- Call `handle_event()` with specific inputs
+- Assert state changes match expectations
+- No terminal, no actual LLM calls, no event polling
+
+**Test cases:**
+- Key inputs: typed char, backspace, arrow keys, enter, escape
+- LLM events: Token, Done, Error
+- Mode switching: Ctrl+T cycles modes
+- Scrolling: Page Up/Down, scroll distance correct
+- Selection: Mouse drag, Ctrl+C copies
+
+#### Step 1B: Record Model in api_logs
+**Changes:**
+1. Add `model_name TEXT` column to `api_logs` table
+2. Pass model name to `save_api_log()` calls
+3. Migration: Existing rows get NULL; new rows get actual model
+
+**Implementation:**
+- `db.rs`: Update schema, add parameter to `save_api_log()`
+- `llm.rs`: Pass `server_info.model_name` when logging
+- `main.rs`: No change (app already has `model_name`)
+
+**Benefit**: Immediately starts collecting real model data for future fixtures
+
+### Implementation Plan: Step 2 (Future)
+
+#### Step 2A: Extract SSE Parsing
+**Assessment**: Check if worth extracting (depends on complexity)
+- If straightforward: Keep in llm.rs
+- If complex: Extract to `sse_parser.rs` (we already have tests for this!)
+
+**Note**: SSE format is standardized (OpenAI); model differences are in *content* (tool calls, thinking format)
+
+#### Step 2B: Create Test Fixtures
+**Process:**
+1. Query DB for real responses: `SELECT full_response FROM api_logs WHERE model_name = 'qwen-3.5-30b' LIMIT 10`
+2. Pick 3-5 representative responses (success, error, thinking, tool call)
+3. Save to `fixtures/qwen-3.5-30b/*.json`
+4. Anonymize/truncate PII if needed
+5. Add model-specific test variants
+
+### Expected Outcome
+- **Testable code**: Event loop logic separated from infrastructure
+- **Real data**: Fixture factory (the DB) collecting actual responses
+- **Better coverage**: 0% → ~60% for main.rs, foundational tests for event handling
+- **Model context**: Each API log tagged with which model responded
+- **Simpler testing**: Future SSE tests use real responses, not mocks
+
+---
