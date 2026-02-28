@@ -500,37 +500,34 @@ CREATE TABLE debug_settings (
 - **Phase 3 (testing)**: Use fixtures for SSE parsing tests
 - **Benefit**: Fixtures based on actual data, not assumptions
 
-### Implementation Plan: Step 1 (Next)
+### Implementation Plan: Step 1 - COMPLETED ✅ (Feb 28, 2026)
 
-#### Step 1A: Make main.rs Thin + Extract Event Loop
+#### Step 1A: Make main.rs Thin + Extract Event Loop ✅ COMPLETE
 **Goal**: Separate CLI setup from state machine logic
 
-**Changes to main.rs:**
-1. Keep: Argument parsing, config loading, initialization
-2. Extract: Event handling logic → new function
-3. Event handler signature:
-   ```rust
-   fn handle_event(app: &mut App, event: Event) -> Result<()>
-   fn handle_llm_event(app: &mut App, event: LlmEvent) -> Result<()>
-   fn handle_key_event(app: &mut App, event: KeyEvent) -> Result<()>
-   fn handle_resize_event(app: &mut App, size: Size) -> Result<()>
-   ```
-4. Main loop becomes: `loop { poll() → handle_event() → render() }`
+**Completed Changes:**
+1. ✅ Created `src/event.rs` module (290 lines)
+   - `handle_llm_event()` - Process all LLM events (Token, Thinking, Done, Error, Usage, ToolCall, ApiLog, Progress)
+   - `handle_key_event()` - Handle keyboard input, returns bool to signal exit
+   - `handle_mouse_event()` - Process mouse events
+   - Helper functions for panel-specific key handling
 
-**Testing approach:**
-- Create test App state with known conditions
-- Call `handle_event()` with specific inputs
-- Assert state changes match expectations
-- No terminal, no actual LLM calls, no event polling
+2. ✅ Made main.rs thin (from 410 → 83 lines in event loop)
+   - Keep: CLI parsing, config loading, initialization
+   - Removed: All event handling code
+   - Main loop now: `draw() → process_llm_events() → poll_terminal() → dispatch_handlers() → update()`
 
-**Test cases:**
-- Key inputs: typed char, backspace, arrow keys, enter, escape
-- LLM events: Token, Done, Error
-- Mode switching: Ctrl+T cycles modes
-- Scrolling: Page Up/Down, scroll distance correct
-- Selection: Mouse drag, Ctrl+C copies
+3. ✅ Restructured module organization
+   - lib.rs: Exposes all modules publicly for testing
+   - main.rs: Imports from library (clean separation)
 
-#### Step 1B: Record Model in api_logs
+**Result:**
+- ✅ All 74 tests passing
+- ✅ Clippy clean
+- ✅ Event handlers now testable independently (no event loop needed)
+- ✅ Code ready for event handler unit tests
+
+#### Step 1B: Record Model in api_logs (Next)
 **Changes:**
 1. Add `model_name TEXT` column to `api_logs` table
 2. Pass model name to `save_api_log()` calls
