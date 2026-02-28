@@ -28,7 +28,7 @@ fn parse_color(color_str: &str) -> Color {
 fn highlight_line_range(line: Line<'static>, char_start: usize, char_end: usize) -> Line<'static> {
     let mut new_spans = Vec::new();
     let mut pos = 0;
-    let highlight_style = Style::default().bg(Color::Blue);
+    let highlight_style = Style::default().fg(Color::Blue);
 
     for span in line.spans {
         let span_len = span.content.chars().count();
@@ -108,10 +108,18 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
 
     for msg in &app.messages {
         if msg.role == "user" {
+            // Add top padding with black background
+            let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
+            lines.push(Line::from(vec![padding_line]));
+            text_lines.push(String::new());
+
             if msg.is_tool_result {
                 // Tool results already contain a brief summary (e.g., "Reading config.yaml")
                 let padded = format!("  {}  ", msg.text);
-                let style = Style::default().fg(Color::DarkGray).italic();
+                let style = Style::default()
+                    .fg(Color::DarkGray)
+                    .italic()
+                    .bg(Color::Black);
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
                 text_lines.push(msg.text.clone());
             } else {
@@ -142,11 +150,21 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
             let wrapped = wrap_text(&msg.text, available_width);
             for line_text in wrapped {
                 let spans = parse_markdown_line(&line_text);
-                lines.push(Line::from(spans));
+                // Add padding spans around the parsed spans
+                let mut padded_spans = vec![Span::raw("  ")];
+                padded_spans.extend(spans);
+                padded_spans.push(Span::raw("  "));
+                lines.push(Line::from(padded_spans));
                 text_lines.push(line_text);
             }
         }
-        lines.push(Line::from(""));
+        // Add bottom padding for user messages with black background, regular blank for others
+        if msg.role == "user" {
+            let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
+            lines.push(Line::from(vec![padding_line]));
+        } else {
+            lines.push(Line::from(""));
+        }
         text_lines.push(String::new());
     }
 
@@ -171,7 +189,11 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
         let wrapped = wrap_text(&app.pending_response, available_width);
         for line_text in wrapped {
             let spans = parse_markdown_line(&line_text);
-            lines.push(Line::from(spans));
+            // Add padding spans around the parsed spans
+            let mut padded_spans = vec![Span::raw("  ")];
+            padded_spans.extend(spans);
+            padded_spans.push(Span::raw("  "));
+            lines.push(Line::from(padded_spans));
             text_lines.push(line_text);
         }
     }
@@ -184,18 +206,21 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
     let start_line = (app.scroll_offset as u16).min(max_scroll);
 
     // Apply selection highlighting if selection is active
-    let visible_lines: Vec<Line> = if let (Some(sel_start), Some(sel_end)) = (app.selection_start, app.selection_end) {
+    let visible_lines: Vec<Line> = if let (Some(sel_start), Some(sel_end)) =
+        (app.selection_start, app.selection_end)
+    {
         let min_row = sel_start.1.min(sel_end.1);
         let max_row = sel_start.1.max(sel_end.1);
-        let (col_start, col_end) = if sel_start.1 < sel_end.1 || (sel_start.1 == sel_end.1 && sel_start.0 <= sel_end.0) {
-            (sel_start.0, sel_end.0)
-        } else {
-            (sel_end.0, sel_start.0)
-        };
+        let (col_start, col_end) =
+            if sel_start.1 < sel_end.1 || (sel_start.1 == sel_end.1 && sel_start.0 <= sel_end.0) {
+                (sel_start.0, sel_end.0)
+            } else {
+                (sel_end.0, sel_start.0)
+            };
 
-        let pad = 2usize;
-        let text_col_start = (col_start as usize).saturating_sub(app.messages_rect.x as usize + pad);
-        let text_col_end = (col_end as usize).saturating_sub(app.messages_rect.x as usize + pad);
+        // For highlighting, use column position within the rendered line (includes padding)
+        let text_col_start = (col_start as usize).saturating_sub(app.messages_rect.x as usize);
+        let text_col_end = (col_end as usize).saturating_sub(app.messages_rect.x as usize);
 
         lines
             .into_iter()
@@ -219,7 +244,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                     highlight_line_range(line, 0, text_col_end)
                 } else {
                     // Middle line - highlight entire line
-                    let highlight_style = Style::default().bg(Color::Blue);
+                    let highlight_style = Style::default().fg(Color::Blue);
                     line.style(highlight_style)
                 }
             })
@@ -363,6 +388,7 @@ fn draw_control_panel(_app: &App, frame: &mut Frame) {
 
     let text = Paragraph::new(lines).style(Style::default().bg(Color::Black));
     frame.render_widget(block, modal_area);
+    frame.render_widget(Clear, inner);
     frame.render_widget(text, inner);
 }
 
@@ -603,46 +629,130 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
                 .split('+')
                 .next()
                 .unwrap_or("");
-            let time_span =
-                Span::styled(time_str.to_string(), Style::default().fg(Color::DarkGray));
+            // Truncate timestamp to 3 decimal places (milliseconds)
+            let time_display = if let Some(dot_idx) = time_str.find('.') {
+                let base = &time_str[..dot_idx];
+                let decimals = &time_str[dot_idx + 1..];
+                let truncated = if decimals.len() > 3 {
+                    &decimals[..3]
+                } else {
+                    decimals
+                };
+                format!("{}.{}", base, truncated)
+            } else {
+                time_str.to_string()
+            };
+            let time_span = Span::styled(time_display, Style::default().fg(Color::White));
 
-            let duration_str = format!("{}ms", log.duration_ms.unwrap_or(0));
+            let duration_ms = log.duration_ms.unwrap_or(0);
+            let duration_str = format!("{:>6}ms", duration_ms);
             let duration_span = Span::raw(format!("  {}  ", duration_str));
 
-            let line_style = if is_selected {
-                Style::default().bg(Color::DarkGray)
+            // Extract user message text from request body JSON
+            let description =
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&log.request_body) {
+                    if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
+                        // Find the last user message
+                        messages
+                            .iter()
+                            .rev()
+                            .find(|msg| {
+                                msg.get("role")
+                                    .and_then(|r| r.as_str())
+                                    .map(|r| r == "user")
+                                    .unwrap_or(false)
+                            })
+                            .and_then(|msg| msg.get("content"))
+                            .and_then(|content| content.as_str())
+                            .map(|s| {
+                                if s.len() > 50 {
+                                    format!("{}...", &s[..47])
+                                } else {
+                                    s.to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| "tool call".to_string())
+                    } else {
+                        "tool call".to_string()
+                    }
+                } else {
+                    "tool call".to_string()
+                };
+
+            let bg_style = if is_selected {
+                Style::default().bg(Color::Rgb(50, 50, 50))
             } else {
                 Style::default()
             };
 
             if let Some(ref err) = log.error_message {
                 let error_text = format!("Error: {}", err);
-                lines.push(
-                    Line::from(vec![
-                        time_span,
-                        Span::raw("  "),
-                        status_icon,
-                        duration_span,
-                        Span::styled(error_text, Style::default().fg(Color::Red)),
-                    ])
-                    .style(line_style),
-                );
+                let mut spans = vec![
+                    if is_selected {
+                        Span::styled(
+                            "✗",
+                            Style::default().fg(Color::Red).bg(Color::Rgb(50, 50, 50)),
+                        )
+                    } else {
+                        status_icon.clone()
+                    },
+                    Span::styled("  ", bg_style),
+                    Span::styled(
+                        time_span.content.clone(),
+                        if is_selected {
+                            Style::default().fg(Color::White).bg(Color::Rgb(50, 50, 50))
+                        } else {
+                            Style::default().fg(Color::White)
+                        },
+                    ),
+                    Span::styled("  ", bg_style),
+                    Span::styled(duration_span.content.clone(), bg_style),
+                    Span::styled(
+                        error_text,
+                        if is_selected {
+                            Style::default().fg(Color::Red).bg(Color::Rgb(50, 50, 50))
+                        } else {
+                            Style::default().fg(Color::Red)
+                        },
+                    ),
+                ];
+                if is_selected {
+                    spans.push(Span::styled(
+                        " ".repeat(100),
+                        Style::default().bg(Color::Rgb(50, 50, 50)),
+                    ));
+                }
+                lines.push(Line::from(spans));
             } else {
-                let truncated_body = if log.request_body.len() > 50 {
-                    format!("{}...", &log.request_body[..47])
-                } else {
-                    log.request_body.clone()
-                };
-                lines.push(
-                    Line::from(vec![
-                        time_span,
-                        Span::raw("  "),
-                        status_icon,
-                        duration_span,
-                        Span::raw(truncated_body),
-                    ])
-                    .style(line_style),
-                );
+                let mut spans = vec![
+                    if is_selected {
+                        Span::styled(
+                            "✓",
+                            Style::default().fg(Color::Green).bg(Color::Rgb(50, 50, 50)),
+                        )
+                    } else {
+                        status_icon.clone()
+                    },
+                    Span::styled("  ", bg_style),
+                    Span::styled(
+                        time_span.content.clone(),
+                        if is_selected {
+                            Style::default().fg(Color::White).bg(Color::Rgb(50, 50, 50))
+                        } else {
+                            Style::default().fg(Color::White)
+                        },
+                    ),
+                    Span::styled("  ", bg_style),
+                    Span::styled(duration_span.content.clone(), bg_style),
+                    Span::styled(description, bg_style),
+                ];
+                if is_selected {
+                    spans.push(Span::styled(
+                        " ".repeat(100),
+                        Style::default().bg(Color::Rgb(50, 50, 50)),
+                    ));
+                }
+                lines.push(Line::from(spans));
             }
         }
 

@@ -231,6 +231,11 @@ fn main() -> std::io::Result<()> {
                                     KeyCode::Esc => {
                                         app.panel_state = crate::app::PanelState::ControlPanel
                                     }
+                                    KeyCode::Char('c')
+                                        if key.modifiers.contains(event::KeyModifiers::CONTROL) =>
+                                    {
+                                        app.panel_state = crate::app::PanelState::ControlPanel
+                                    }
                                     KeyCode::Char('e') | KeyCode::Char('E') => {
                                         app.debug_filter_errors = !app.debug_filter_errors;
                                         app.debug_selected_row = 0;
@@ -251,7 +256,10 @@ fn main() -> std::io::Result<()> {
                                     KeyCode::Up => {
                                         app.debug_selected_row =
                                             app.debug_selected_row.saturating_sub(1);
-                                        app.debug_scroll = app.debug_scroll.saturating_sub(1);
+                                        // Only scroll if selection goes above visible area
+                                        if app.debug_selected_row < app.debug_scroll {
+                                            app.debug_scroll = app.debug_selected_row;
+                                        }
                                     }
                                     KeyCode::Down => {
                                         let filtered_logs = app.debug_filtered_logs();
@@ -259,22 +267,38 @@ fn main() -> std::io::Result<()> {
                                             < filtered_logs.len().saturating_sub(1)
                                         {
                                             app.debug_selected_row += 1;
-                                            app.debug_scroll += 1;
+                                            // Scroll only if selection goes below visible area
+                                            // Estimate visible height as 10 rows (typical modal height)
+                                            let visible_height = 10;
+                                            if app.debug_selected_row
+                                                >= app.debug_scroll + visible_height
+                                            {
+                                                app.debug_scroll =
+                                                    app.debug_selected_row - visible_height + 1;
+                                            }
                                         }
                                     }
                                     KeyCode::PageUp => {
-                                        app.debug_scroll = app.debug_scroll.saturating_sub(5);
                                         app.debug_selected_row =
                                             app.debug_selected_row.saturating_sub(5);
+                                        if app.debug_selected_row < app.debug_scroll {
+                                            app.debug_scroll = app.debug_selected_row;
+                                        }
                                     }
                                     KeyCode::PageDown => {
-                                        app.debug_scroll += 5;
                                         let filtered_logs = app.debug_filtered_logs();
                                         if app.debug_selected_row
                                             < filtered_logs.len().saturating_sub(1)
                                         {
                                             app.debug_selected_row = (app.debug_selected_row + 5)
                                                 .min(filtered_logs.len().saturating_sub(1));
+                                            let visible_height = 10;
+                                            if app.debug_selected_row
+                                                >= app.debug_scroll + visible_height
+                                            {
+                                                app.debug_scroll =
+                                                    app.debug_selected_row - visible_height + 1;
+                                            }
                                         }
                                     }
                                     KeyCode::Enter | KeyCode::Tab => {
