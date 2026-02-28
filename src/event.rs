@@ -8,18 +8,18 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
     match event {
         LlmEvent::Token(t) => {
             app.pending_response.push_str(&t);
-            if !app.user_scrolled {
-                let new_line_count = app.calculate_total_lines();
+            let (at_bottom, total_lines) = app.calculate_scroll_info();
+            if at_bottom {
                 let height = app.messages_rect.height as usize;
-                app.scroll_offset = new_line_count.saturating_sub(height);
+                app.scroll_offset = total_lines.saturating_sub(height);
             }
         }
         LlmEvent::Thinking(t) => {
             app.pending_thinking.push_str(&t);
-            if !app.user_scrolled {
-                let new_line_count = app.calculate_total_lines();
+            let (at_bottom, total_lines) = app.calculate_scroll_info();
+            if at_bottom {
                 let height = app.messages_rect.height as usize;
-                app.scroll_offset = new_line_count.saturating_sub(height);
+                app.scroll_offset = total_lines.saturating_sub(height);
             }
         }
         LlmEvent::Done => {
@@ -42,10 +42,10 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             }
             app.loading = false;
             app.progress = None;
-            if !app.user_scrolled {
-                let new_line_count = app.calculate_total_lines();
+            let (at_bottom, total_lines) = app.calculate_scroll_info();
+            if at_bottom {
                 let height = app.messages_rect.height as usize;
-                app.scroll_offset = new_line_count.saturating_sub(height);
+                app.scroll_offset = total_lines.saturating_sub(height);
             }
         }
         LlmEvent::Error(e) => {
@@ -59,10 +59,10 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             });
             app.loading = false;
             app.progress = None;
-            if !app.user_scrolled {
-                let new_line_count = app.calculate_total_lines();
+            let (at_bottom, total_lines) = app.calculate_scroll_info();
+            if at_bottom {
                 let height = app.messages_rect.height as usize;
-                app.scroll_offset = new_line_count.saturating_sub(height);
+                app.scroll_offset = total_lines.saturating_sub(height);
             }
         }
         LlmEvent::Usage {

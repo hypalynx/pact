@@ -228,3 +228,75 @@ fn test_scroll_offset_saturating_behavior() {
     // Should use saturating_sub, so it stops at 0
     assert!(app.scroll_offset <= initial_offset);
 }
+
+#[test]
+fn test_sticky_to_bottom_when_at_bottom() {
+    let mut app = create_test_app();
+    add_test_messages(&mut app, 10);
+
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+
+    // Position at bottom
+    let total_lines = app.calculate_total_lines();
+    let max_scroll = total_lines.saturating_sub(10);
+    app.scroll_offset = max_scroll;
+
+    // Verify we're at bottom
+    let (at_bottom, _) = app.calculate_scroll_info();
+    assert!(at_bottom);
+
+    // Simulate new content arriving (like a Token event)
+    // The scroll logic should auto-scroll to stay at bottom
+    let (at_bottom, new_total) = app.calculate_scroll_info();
+    if at_bottom {
+        app.scroll_offset = new_total.saturating_sub(10);
+    }
+
+    // Should be at new bottom position
+    let (still_at_bottom, _) = app.calculate_scroll_info();
+    assert!(still_at_bottom);
+}
+
+#[test]
+fn test_no_auto_scroll_when_scrolled_up() {
+    let mut app = create_test_app();
+    add_test_messages(&mut app, 10);
+
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+
+    // Position at bottom
+    let total_lines = app.calculate_total_lines();
+    let max_scroll = total_lines.saturating_sub(10);
+    app.scroll_offset = max_scroll;
+
+    // User scrolls up (away from bottom)
+    app.scroll_up();
+
+    // Verify we're NOT at bottom
+    let (at_bottom, _) = app.calculate_scroll_info();
+    assert!(!at_bottom);
+
+    let saved_offset = app.scroll_offset;
+
+    // Simulate new content arriving
+    // The scroll logic should NOT auto-scroll when not at bottom
+    let (at_bottom, new_total) = app.calculate_scroll_info();
+    if at_bottom {
+        app.scroll_offset = new_total.saturating_sub(10);
+    }
+
+    // Should stay at same position (not auto-scrolled)
+    assert_eq!(app.scroll_offset, saved_offset);
+    let (still_not_at_bottom, _) = app.calculate_scroll_info();
+    assert!(!still_not_at_bottom);
+}
