@@ -7,22 +7,53 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
     match event {
         LlmEvent::Token(t) => {
+            // Check if at bottom BEFORE adding content
+            let was_at_bottom = if app.messages_rect.height > 0 {
+                let (at_bottom, _) = app.calculate_scroll_info();
+                at_bottom
+            } else {
+                // Startup: viewport not sized yet, assume at bottom
+                true
+            };
+
+            // Add content
             app.pending_response.push_str(&t);
-            let (at_bottom, total_lines) = app.calculate_scroll_info();
-            if at_bottom {
-                let height = app.messages_rect.height as usize;
-                app.scroll_offset = total_lines.saturating_sub(height);
+
+            // Auto-scroll to bottom if we were at bottom before content arrived
+            if was_at_bottom {
+                let total_lines = app.calculate_total_lines();
+                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
         }
         LlmEvent::Thinking(t) => {
+            // Check if at bottom BEFORE adding content
+            let was_at_bottom = if app.messages_rect.height > 0 {
+                let (at_bottom, _) = app.calculate_scroll_info();
+                at_bottom
+            } else {
+                // Startup: viewport not sized yet, assume at bottom
+                true
+            };
+
+            // Add content
             app.pending_thinking.push_str(&t);
-            let (at_bottom, total_lines) = app.calculate_scroll_info();
-            if at_bottom {
-                let height = app.messages_rect.height as usize;
-                app.scroll_offset = total_lines.saturating_sub(height);
+
+            // Auto-scroll to bottom if we were at bottom before content arrived
+            if was_at_bottom {
+                let total_lines = app.calculate_total_lines();
+                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
         }
         LlmEvent::Done => {
+            // Check if at bottom BEFORE adding message
+            let was_at_bottom = if app.messages_rect.height > 0 {
+                let (at_bottom, _) = app.calculate_scroll_info();
+                at_bottom
+            } else {
+                // Startup: viewport not sized yet, assume at bottom
+                true
+            };
+
             let text = std::mem::take(&mut app.pending_response);
             let thinking = if app.pending_thinking.is_empty() {
                 None
@@ -42,13 +73,23 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             }
             app.loading = false;
             app.progress = None;
-            let (at_bottom, total_lines) = app.calculate_scroll_info();
-            if at_bottom {
-                let height = app.messages_rect.height as usize;
-                app.scroll_offset = total_lines.saturating_sub(height);
+
+            // Auto-scroll to bottom if we were at bottom before message added
+            if was_at_bottom {
+                let total_lines = app.calculate_total_lines();
+                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
         }
         LlmEvent::Error(e) => {
+            // Check if at bottom BEFORE adding message
+            let was_at_bottom = if app.messages_rect.height > 0 {
+                let (at_bottom, _) = app.calculate_scroll_info();
+                at_bottom
+            } else {
+                // Startup: viewport not sized yet, assume at bottom
+                true
+            };
+
             let text = format!("Error: {}", e);
             app.messages.push(Message {
                 role: "assistant".to_string(),
@@ -59,10 +100,11 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             });
             app.loading = false;
             app.progress = None;
-            let (at_bottom, total_lines) = app.calculate_scroll_info();
-            if at_bottom {
-                let height = app.messages_rect.height as usize;
-                app.scroll_offset = total_lines.saturating_sub(height);
+
+            // Auto-scroll to bottom if we were at bottom before message added
+            if was_at_bottom {
+                let total_lines = app.calculate_total_lines();
+                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
         }
         LlmEvent::Usage {
