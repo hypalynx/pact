@@ -21,6 +21,20 @@ pub struct FilePicker {
     pub selected: usize,
 }
 
+pub enum SlashCommand {
+    Model,
+    Connect,
+}
+
+pub struct SlashCommandPicker {
+    pub command: SlashCommand,
+    pub query: String,
+    pub slash_start: usize, // byte offset in `input` where / was typed
+    pub all_entries: Vec<String>,
+    pub filtered: Vec<String>,
+    pub selected: usize,
+}
+
 fn scan_project_files() -> Vec<String> {
     let mut files = Vec::new();
     walk_dir(std::path::Path::new("."), &mut files, 0);
@@ -59,6 +73,8 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<String>, depth: usize) {
     }
 }
 
+const DEFAULT_MAX_TOKENS: usize = 1024;
+
 pub struct App {
     pub db: Option<Db>,
     pub messages: Vec<Message>,
@@ -87,7 +103,6 @@ pub struct App {
     pub frame_count: u32,
     pub last_server_check: u32,
     pub api_endpoint: String,
-    pub max_tokens: usize,
     pub temperature: Option<f32>,
     pub mode_color: Option<String>,
     pub model_name: String,
@@ -113,13 +128,21 @@ pub struct App {
     pub agents_context: Option<String>,
     pub file_picker: Option<FilePicker>,
     pub file_picker_map: IndexMap<String, String>, // Map filename -> full relative path
+    
+    // Provider management
+    pub providers: Vec<crate::db::Provider>,
+    pub active_provider: Option<crate::db::Provider>,
+    
+    // Slash command picker
+    pub slash_picker: Option<SlashCommandPicker>,
+    
+    // API key input mode
+    pub api_key_input: Option<String>, // When Some, we're in API key input mode
 }
 
 impl App {
     pub fn new(
         debug: bool,
-        api_endpoint: String,
-        max_tokens: usize,
         temperature: Option<f32>,
         mode_name: String,
         modes_config: IndexMap<String, crate::config::Mode>,
@@ -162,8 +185,7 @@ impl App {
             total_output_tokens: 0,
             frame_count: 0,
             last_server_check: 0,
-            api_endpoint,
-            max_tokens,
+            api_endpoint: String::new(),
             temperature,
             mode_color,
             model_name: String::new(),
@@ -189,7 +211,49 @@ impl App {
             agents_context,
             file_picker: None,
             file_picker_map: IndexMap::new(),
+            providers: Vec::new(),
+            active_provider: None,
+            slash_picker: None,
+            api_key_input: None,
         }
+    }
+
+    pub fn load_providers_from_db(&mut self) {
+        if let Some(db) = &self.db {
+            if let Ok(providers) = db.get_providers() {
+                self.providers = providers;
+            }
+            if let Ok(Some(active)) = db.get_active_provider() {
+                self.active_provider = Some(active.clone());
+                self.api_endpoint = active.endpoint.clone();
+            }
+        }
+    }
+
+    pub fn cycle_provider(&mut self) {
+        if self.providers.is_empty() {
+            return;
+        }
+        
+        // Find current provider index
+        let current_idx = self.active_provider
+            .as_ref()
+            .and_then(|ap| self.providers.iter().position(|p| p.name == ap.name))
+            .unwrap_or(0);
+        
+        // Get next provider
+        let next_idx = (current_idx + 1) % self.providers.len();
+        let next_provider = self.providers[next_idx].clone();
+        
+        // Update active provider in DB and app
+        if let Some(db) = &self.db {
+            let _ = db.set_active_provider(&next_provider.name);
+        }
+        
+        self.active_provider = Some(next_provider.clone());
+        self.api_endpoint = next_provider.endpoint.clone();
+        self.error_message = Some(format!("Switched to provider: {}", next_provider.name));
+        self.last_error_frame = self.frame_count;
     }
 
     pub fn submit_message(&mut self) {
@@ -246,8 +310,18 @@ impl App {
         let tx = self.tx.clone();
         let debug = self.debug;
         let endpoint = self.api_endpoint.clone();
-        let max_tokens = self.max_tokens;
+        let max_tokens = DEFAULT_MAX_TOKENS;
         let temperature = self.temperature;
+
+        // Get provider info (API key and model) from active provider if available
+        let api_key = self.active_provider.as_ref().and_then(|p| p.api_key.clone());
+        let provider_name = self.active_provider.as_ref().map(|p| p.name.clone());
+        
+        // Get model ID from active provider's default_model, or use "local" as fallback
+        let model_id = self.active_provider
+            .as_ref()
+            .and_then(|p| p.default_model.clone())
+            .unwrap_or_else(|| "local".to_string());
 
         // Use agents_context as system prompt if available, otherwise use mode's system prompt
         let system_prompt = if let Some(ref ctx) = self.agents_context {
@@ -258,17 +332,18 @@ impl App {
                 .and_then(|m| m.system_prompt.clone())
         };
 
-        let model_name = self.model_name.clone();
         std::thread::spawn(move || {
             crate::llm::call_llm(
                 messages,
                 tx,
                 debug,
                 &endpoint,
+                api_key.as_deref(),
                 max_tokens,
                 temperature,
                 system_prompt,
-                model_name,
+                model_id,
+                provider_name,
                 cancel_flag,
             );
         });
@@ -844,6 +919,250 @@ impl App {
             self.input.drain(at_start..cursor_pos);
             self.input.insert_str(at_start, &display_text);
             self.cursor_pos = at_start + display_text.len();
+        }
+    }
+
+    // Slash command picker methods
+
+    pub fn start_slash_command_help(&mut self) {
+        let slash_start = self.cursor_pos.saturating_sub(1);
+        
+        // Show help with available commands
+        self.slash_picker = Some(SlashCommandPicker {
+            command: SlashCommand::Model, // Default, will switch
+            query: String::new(),
+            slash_start,
+            all_entries: vec![
+                "/model - Select a model".to_string(),
+                "/connect - Set API key".to_string(),
+            ],
+            filtered: vec![
+                "/model - Select a model".to_string(),
+                "/connect - Set API key".to_string(),
+            ],
+            selected: 0,
+        });
+    }
+
+    pub fn start_slash_picker(&mut self, command: SlashCommand, initial_text: &str) {
+        let slash_start = self.cursor_pos.saturating_sub(1 + initial_text.len());
+        
+        let all_entries = match command {
+            SlashCommand::Model => self.fetch_available_models(),
+            SlashCommand::Connect => vec!["Enter API key for current provider".to_string()],
+        };
+        
+        self.slash_picker = Some(SlashCommandPicker {
+            command,
+            query: initial_text.to_string(),
+            slash_start,
+            all_entries,
+            filtered: Vec::new(),
+            selected: 0,
+        });
+        self.slash_picker_update_filter();
+    }
+
+    fn fetch_available_models(&self) -> Vec<String> {
+        if let Some(provider) = &self.active_provider {
+            // First try to get models from database (populated from config)
+            if let Some(db) = &self.db
+                && let Ok(models) = db.get_provider_models(&provider.name)
+                && !models.is_empty()
+            {
+                return models;
+            }
+            
+            // Otherwise try to fetch from API
+            let models = crate::utils::fetch_available_models(
+                &provider.endpoint,
+                provider.api_key.as_deref(),
+            );
+            
+            if !models.is_empty() {
+                models
+            } else {
+                // Fallback for local llama.cpp server
+                vec!["local".to_string()]
+            }
+        } else {
+            vec!["local".to_string()]
+        }
+    }
+
+    pub fn slash_picker_update_filter(&mut self) {
+        if let Some(picker) = &mut self.slash_picker {
+            let query_lower = picker.query.to_lowercase();
+            picker.filtered = picker
+                .all_entries
+                .iter()
+                .filter(|entry| entry.to_lowercase().contains(&query_lower))
+                .cloned()
+                .collect();
+            picker.selected = 0;
+        }
+    }
+
+    pub fn slash_picker_type(&mut self, c: char) {
+        if let Some(picker) = &mut self.slash_picker {
+            picker.query.push(c);
+        }
+        // Also insert into main input buffer so user sees what they're typing
+        self.input.insert(self.cursor_pos, c);
+        self.cursor_pos += c.len_utf8();
+        self.slash_picker_update_filter();
+    }
+
+    pub fn slash_picker_backspace(&mut self) -> bool {
+        if let Some(picker) = &mut self.slash_picker {
+            if picker.query.is_empty() {
+                return false; // Signal to close picker
+            }
+            picker.query.pop();
+            // Also delete from main input buffer
+            if self.cursor_pos > 0 {
+                let byte_pos = self
+                    .input
+                    .char_indices()
+                    .rfind(|(i, _)| *i < self.cursor_pos)
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                self.input.remove(byte_pos);
+                self.cursor_pos = self.cursor_pos.saturating_sub(1);
+            }
+        } else {
+            return true;
+        }
+        self.slash_picker_update_filter();
+        true
+    }
+
+    pub fn slash_picker_up(&mut self) {
+        if let Some(picker) = &mut self.slash_picker {
+            picker.selected = picker.selected.saturating_sub(1);
+        }
+    }
+
+    pub fn slash_picker_down(&mut self) {
+        if let Some(picker) = &mut self.slash_picker
+            && picker.selected < picker.filtered.len().saturating_sub(1)
+        {
+            picker.selected += 1;
+        }
+    }
+
+    pub fn slash_picker_select(&mut self) {
+        if let Some(picker) = self.slash_picker.take()
+            && picker.slash_start <= self.input.len()
+        {
+            // Check if we're in help mode (entries contain help text)
+            if let Some(entry) = picker.filtered.get(picker.selected) {
+                if entry.starts_with("/model -") {
+                    // User selected /model from help - start model picker
+                    self.start_slash_picker(SlashCommand::Model, &picker.query);
+                    return;
+                } else if entry.starts_with("/connect -") {
+                    // User selected /connect from help
+                    self.api_key_input = Some(String::new());
+                    let slash_start = picker.slash_start;
+                    self.input.drain(slash_start..self.cursor_pos);
+                    self.cursor_pos = slash_start;
+                    self.error_message = Some("Enter API key (press Enter when done)".to_string());
+                    self.last_error_frame = self.frame_count;
+                    return;
+                }
+            }
+            
+            // Regular command handling
+            match picker.command {
+                SlashCommand::Model => {
+                    // Get model from selection or use typed query as manual entry
+                    let model = picker.filtered.get(picker.selected)
+                        .cloned()
+                        .or_else(|| {
+                            // If nothing selected but user typed something, use that as manual model
+                            if !picker.query.is_empty() {
+                                Some(picker.query.clone())
+                            } else {
+                                None
+                            }
+                        });
+                    
+                    if let Some(model) = model {
+                        // Expand short form "provider/model" to full ID if needed
+                        let full_model_id = if model.contains('/') && !model.starts_with("accounts/") {
+                            // User entered "fireworks/kimi-k2p5" format
+                            format!("accounts/{}", model)
+                        } else {
+                            model
+                        };
+                        
+                        // Update the provider's default_model in memory
+                        if let Some(provider) = &mut self.active_provider {
+                            provider.default_model = Some(full_model_id.clone());
+                            // Update in database
+                            if let Some(db) = &self.db {
+                                let _ = db.update_provider_model(&provider.name, &full_model_id);
+                            }
+                        }
+                        // Remove the slash command from input
+                        let slash_start = picker.slash_start;
+                        self.input.drain(slash_start..self.cursor_pos);
+                        self.cursor_pos = slash_start;
+                        self.error_message = Some(format!("Switched to model: {}", full_model_id));
+                        self.last_error_frame = self.frame_count;
+                    }
+                }
+                SlashCommand::Connect => {
+                    // Enter API key input mode
+                    self.api_key_input = Some(String::new());
+                    // Remove the slash command from input
+                    let slash_start = picker.slash_start;
+                    self.input.drain(slash_start..self.cursor_pos);
+                    self.cursor_pos = slash_start;
+                    self.error_message = Some("Enter API key (press Enter when done)".to_string());
+                    self.last_error_frame = self.frame_count;
+                }
+            }
+        }
+    }
+
+    pub fn handle_api_key_input(&mut self, c: char) {
+        if let Some(key) = &mut self.api_key_input {
+            key.push(c);
+        }
+    }
+
+    pub fn handle_api_key_backspace(&mut self) -> bool {
+        if let Some(key) = &mut self.api_key_input {
+            if key.is_empty() {
+                self.api_key_input = None;
+                return false;
+            }
+            key.pop();
+            return true;
+        }
+        false
+    }
+
+    pub fn submit_api_key(&mut self) {
+        if let Some(key) = self.api_key_input.take()
+            && let Some(provider) = self.active_provider.as_ref()
+        {
+            let provider_name = provider.name.clone();
+            
+            // Update the provider's API key in memory
+            let mut updated_provider = provider.clone();
+            updated_provider.api_key = Some(key.clone());
+            self.active_provider = Some(updated_provider);
+            
+            // Update in database
+            if let Some(db) = &self.db {
+                let _ = db.update_provider_api_key(&provider_name, &key);
+            }
+            
+            self.error_message = Some(format!("API key set for {}", provider_name));
+            self.last_error_frame = self.frame_count;
         }
     }
 }

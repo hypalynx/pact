@@ -94,8 +94,11 @@ pub fn extract_and_format_model_name(raw_name: &str) -> String {
 
 pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
     let client = reqwest::blocking::Client::new();
+    // Trim trailing /v1 from endpoint to avoid /v1/v1/models
+    // But keep /inference as it's part of Fireworks base URL
+    let base = endpoint.trim_end_matches("/v1");
 
-    if let Ok(response) = client.get(format!("{}/v1/models", endpoint)).send()
+    if let Ok(response) = client.get(format!("{}/v1/models", base)).send()
         && let Ok(text) = response.text()
         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
     {
@@ -138,6 +141,48 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
         model_name: "unknown".to_string(),
         context_window: 65535,
     }
+}
+
+/// Fetch all available models from the provider's /v1/models endpoint
+/// Returns a list of model IDs that can be used for the /model command
+pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<String> {
+    let client = reqwest::blocking::Client::new();
+    // Trim trailing /v1 from endpoint if present to avoid /v1/v1/models
+    // But keep /inference as it's part of Fireworks base URL
+    let base = endpoint.trim_end_matches("/v1");
+    let url = format!("{}/v1/models", base);
+    
+    let mut request = client.get(&url);
+    
+    // Add Authorization header if API key is provided
+    if let Some(key) = api_key {
+        request = request.header("Authorization", format!("Bearer {}", key));
+    }
+    
+    if let Ok(response) = request.send()
+        && let Ok(text) = response.text()
+        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
+    {
+        // Standard OpenAI format: { "data": [{ "id": "..." }] }
+        if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
+            return data
+                .iter()
+                .filter_map(|model| {
+                    model.get("id")
+                        .and_then(|id| id.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect();
+        }
+        
+        // Try single model response format (llama.cpp server)
+        if let Some(id) = json.get("id").and_then(|id| id.as_str()) {
+            return vec![id.to_string()];
+        }
+    }
+    
+    // Return empty list - no fallback
+    Vec::new()
 }
 
 pub fn db_path() -> PathBuf {

@@ -6,21 +6,21 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
-    pub api: ApiConfig,
-    #[serde(default)]
     pub ui: UiConfig,
     #[serde(default)]
     pub debug: bool,
     pub agents_md_path: Option<String>,
+    #[serde(default)]
+    pub providers: Vec<ProviderConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiConfig {
-    #[serde(default = "default_endpoint")]
+pub struct ProviderConfig {
+    pub name: String,
     pub endpoint: String,
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: usize,
-    pub api_key: Option<String>,
+    pub default_model: Option<String>,
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -38,26 +38,8 @@ pub struct UiConfig {
     pub modes: IndexMap<String, Mode>,
 }
 
-fn default_endpoint() -> String {
-    "http://127.0.0.1:7777".to_string()
-}
-
-fn default_max_tokens() -> usize {
-    1024
-}
-
 fn default_mode() -> String {
     "build".to_string()
-}
-
-impl Default for ApiConfig {
-    fn default() -> Self {
-        Self {
-            endpoint: default_endpoint(),
-            max_tokens: default_max_tokens(),
-            api_key: None,
-        }
-    }
 }
 
 impl Default for UiConfig {

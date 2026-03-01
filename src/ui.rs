@@ -17,7 +17,6 @@ const INPUT_VERTICAL_MARGIN: u16 = 1;
 
 // Control panel constants
 const CONTROL_PANEL_WIDTH: u16 = 40;
-const CONTROL_PANEL_HEIGHT: u16 = 8;
 
 // Debug modal constants
 const DEBUG_MODAL_WIDTH_PERCENT: u16 = 9; // out of 10
@@ -121,6 +120,16 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     // Draw file picker if open
     if app.file_picker.is_some() {
         draw_file_picker(app, frame);
+    }
+
+    // Draw slash picker if open
+    if app.slash_picker.is_some() {
+        draw_slash_picker(app, frame);
+    }
+
+    // Draw API key input prompt if active
+    if app.api_key_input.is_some() {
+        draw_api_key_input(app, frame);
     }
 }
 
@@ -460,16 +469,18 @@ fn colorize_input(input: &str) -> Vec<Span<'static>> {
     spans
 }
 
-fn draw_control_panel(_app: &App, frame: &mut Frame) {
+fn draw_control_panel(app: &App, frame: &mut Frame) {
     let frame_area = frame.area();
+    // Height varies based on content (base 8 + provider info + model info)
+    let panel_height = 11_u16;
     let modal_x = (frame_area.width.saturating_sub(CONTROL_PANEL_WIDTH)) / 2;
-    let modal_y = (frame_area.height.saturating_sub(CONTROL_PANEL_HEIGHT)) / 2;
+    let modal_y = (frame_area.height.saturating_sub(panel_height)) / 2;
 
     let modal_area = Rect {
         x: modal_x,
         y: modal_y,
         width: CONTROL_PANEL_WIDTH,
-        height: CONTROL_PANEL_HEIGHT,
+        height: panel_height,
     };
 
     let block = Block::default()
@@ -482,7 +493,7 @@ fn draw_control_panel(_app: &App, frame: &mut Frame) {
         horizontal: 1,
     });
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![Span::raw("Available Panels:")]),
         Line::from(""),
         Line::from(vec![Span::styled(
@@ -490,6 +501,35 @@ fn draw_control_panel(_app: &App, frame: &mut Frame) {
             Style::default().fg(Color::Cyan),
         )]),
     ];
+
+    // Show provider info and switch option
+    lines.push(Line::from(""));
+    let current_provider = app.active_provider.as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("local");
+    let current_model = app.active_provider
+        .as_ref()
+        .and_then(|p| p.default_model.as_ref())
+        .map(|m| m.as_str())
+        .unwrap_or("local");
+    
+    if app.providers.len() > 1 {
+        lines.push(Line::from(vec![Span::styled(
+            format!("[P] Switch Provider ({})", current_provider),
+            Style::default().fg(Color::Yellow),
+        )]));
+    } else {
+        lines.push(Line::from(vec![Span::styled(
+            format!("Provider: {}", current_provider),
+            Style::default().fg(Color::DarkGray),
+        )]));
+    }
+    
+    // Show current model
+    lines.push(Line::from(vec![Span::styled(
+        format!("Model: {}", current_model),
+        Style::default().fg(Color::DarkGray),
+    )]));
 
     let text = Paragraph::new(lines).style(Style::default().bg(Color::Black));
     frame.render_widget(block, modal_area);
@@ -570,9 +610,23 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     } else {
         0
     };
+    let provider_name = app.active_provider.as_ref()
+        .map(|p| p.name.as_str())
+        .unwrap_or("local");
+    // Use app.model_name (from server info) if available, otherwise fall back to provider's default_model
+    let model_id = if !app.model_name.is_empty() && app.model_name != "unknown" {
+        &app.model_name
+    } else {
+        app.active_provider
+            .as_ref()
+            .and_then(|p| p.default_model.as_ref())
+            .map(|m| m.as_str())
+            .unwrap_or("local")
+    };
     let right_text = format!(
-        "{} | {}/{} ({}%)",
-        app.model_name,
+        "[{}] {} | {}/{} ({}%)",
+        provider_name,
+        model_id,
         format_tokens(tokens_used),
         format_tokens(app.context_window),
         percentage
@@ -650,6 +704,126 @@ fn draw_file_picker(app: &App, frame: &mut Frame) {
                 lines.push(Line::from(Span::styled(truncated, style)));
             }
 
+            frame.render_widget(Paragraph::new(lines), inner);
+        }
+    }
+}
+
+fn draw_slash_picker(app: &App, frame: &mut Frame) {
+    if let Some(picker) = &app.slash_picker {
+        let max_visible = DEBUG_FILE_PICKER_MAX_VISIBLE;
+        let height = (picker.filtered.len().min(max_visible) + 2).max(3) as u16;
+
+        // Position: top edge of input_rect, same horizontal position
+        let area = Rect {
+            x: app.input_rect.x,
+            y: app.input_rect.y.saturating_sub(height),
+            width: app.input_rect.width,
+            height,
+        };
+
+        // Only draw if there's space above the input
+        if app.input_rect.y >= height {
+            // Check if showing help menu (entries contain help text)
+            let is_help_mode = picker.filtered.iter().any(|e| e.contains(" - "));
+            
+            let title = if is_help_mode {
+                "Commands".to_string()
+            } else {
+                match picker.command {
+                    crate::app::SlashCommand::Model => format!("/model {}", picker.query),
+                    crate::app::SlashCommand::Connect => "Enter API Key".to_string(),
+                }
+            };
+            
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .style(Style::default().bg(Color::Black));
+
+            let inner = area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 1,
+            });
+
+            // Draw background
+            frame.render_widget(Clear, area);
+            frame.render_widget(block, area);
+
+            // Render visible entries
+            let start_idx = if picker.selected > max_visible - 1 {
+                picker.selected - max_visible + 1
+            } else {
+                0
+            };
+            let end_idx = (start_idx + max_visible).min(picker.filtered.len());
+
+            let mut lines = Vec::new();
+            
+            // Show entries if there are any
+            if !picker.filtered.is_empty() {
+                for (i, entry) in picker.filtered[start_idx..end_idx].iter().enumerate() {
+                    let idx = start_idx + i;
+                    let is_selected = idx == picker.selected;
+                    let style = if is_selected {
+                        Style::default().bg(Color::Rgb(50, 50, 50))
+                    } else {
+                        Style::default()
+                    };
+
+                    let truncated = if entry.len() > inner.width as usize {
+                        format!("{}...", &entry[..inner.width.saturating_sub(3) as usize])
+                    } else {
+                        entry.clone()
+                    };
+                    lines.push(Line::from(Span::styled(truncated, style)));
+                }
+            } else if matches!(picker.command, crate::app::SlashCommand::Model) {
+                // No models available - show hint for manual entry
+                lines.push(Line::from(vec![
+                    Span::styled("No models found. ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("Type model ID and press Enter", Style::default().fg(Color::Yellow)),
+                ]));
+                if !picker.query.is_empty() {
+                    lines.push(Line::from(vec![
+                        Span::styled("Will use: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(&picker.query, Style::default().fg(Color::Cyan)),
+                    ]));
+                }
+            }
+
+            frame.render_widget(Paragraph::new(lines), inner);
+        }
+    }
+}
+
+fn draw_api_key_input(app: &App, frame: &mut Frame) {
+    if let Some(key) = &app.api_key_input {
+        let height = 3_u16;
+        let area = Rect {
+            x: app.input_rect.x,
+            y: app.input_rect.y.saturating_sub(height),
+            width: app.input_rect.width,
+            height,
+        };
+
+        if app.input_rect.y >= height {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title("Enter API Key")
+                .style(Style::default().bg(Color::Black));
+
+            let inner = area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 1,
+            });
+
+            frame.render_widget(Clear, area);
+            frame.render_widget(block, area);
+
+            // Mask the API key with asterisks
+            let masked = "*".repeat(key.len());
+            let lines = vec![Line::from(Span::styled(masked, Style::default()))];
             frame.render_widget(Paragraph::new(lines), inner);
         }
     }

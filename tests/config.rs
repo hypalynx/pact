@@ -1,13 +1,5 @@
 use indexmap::IndexMap;
-use pact::config::{ApiConfig, Config, Mode, UiConfig};
-
-#[test]
-fn test_api_config_defaults() {
-    let config = ApiConfig::default();
-    assert_eq!(config.endpoint, "http://127.0.0.1:7777");
-    assert_eq!(config.max_tokens, 1024);
-    assert!(config.api_key.is_none());
-}
+use pact::config::{Config, Mode, UiConfig};
 
 #[test]
 fn test_ui_config_defaults() {
@@ -19,10 +11,9 @@ fn test_ui_config_defaults() {
 #[test]
 fn test_config_defaults() {
     let config = Config::default();
-    assert_eq!(config.api.endpoint, "http://127.0.0.1:7777");
-    assert_eq!(config.api.max_tokens, 1024);
     assert_eq!(config.ui.default_mode, "build");
     assert!(!config.debug);
+    assert!(config.providers.is_empty());
 }
 
 #[test]
@@ -50,7 +41,6 @@ fn test_config_load_no_file() {
     // Config::load() checks if config file exists
     // When it doesn't exist, it should return defaults
     let config = Config::load();
-    assert_eq!(config.api.endpoint, "http://127.0.0.1:7777");
     assert_eq!(config.ui.default_mode, "build");
     // Default modes should include "build" and "plan"
     assert!(config.ui.modes.contains_key("build"));
@@ -101,8 +91,8 @@ fn test_ui_config_modes_order() {
 fn test_config_clone() {
     let config = Config::default();
     let cloned = config.clone();
-    assert_eq!(cloned.api.endpoint, config.api.endpoint);
     assert_eq!(cloned.ui.default_mode, config.ui.default_mode);
+    assert_eq!(cloned.providers.len(), config.providers.len());
 }
 
 #[test]
@@ -125,18 +115,6 @@ fn test_config_load_merges_modes() {
     assert!(config.ui.modes.len() >= 2);
     assert!(config.ui.modes.contains_key("build"));
     assert!(config.ui.modes.contains_key("plan"));
-}
-
-#[test]
-fn test_api_config_with_custom_values() {
-    let config = ApiConfig {
-        endpoint: "http://custom:8000".to_string(),
-        max_tokens: 2048,
-        api_key: Some("test-key".to_string()),
-    };
-    assert_eq!(config.endpoint, "http://custom:8000");
-    assert_eq!(config.max_tokens, 2048);
-    assert_eq!(config.api_key, Some("test-key".to_string()));
 }
 
 #[test]
@@ -167,10 +145,10 @@ fn test_load_agents_context_no_files() {
     // Since we can't easily test without a local AGENTS.md in the project,
     // we verify that the function attempts to load from the custom path
     let config = Config {
-        api: ApiConfig::default(),
         ui: UiConfig::default(),
         debug: false,
         agents_md_path: Some("/nonexistent/path/that/does/not/exist/AGENTS.md".to_string()),
+        providers: vec![],
     };
     let context = config.load_agents_context();
     // In this project, there IS a local AGENTS.md, so context should be Some
@@ -186,10 +164,10 @@ fn test_load_agents_context_with_custom_path() {
     // Test that custom agents_md_path is checked (even if nonexistent)
     // and local AGENTS.md is still available as fallback
     let config = Config {
-        api: ApiConfig::default(),
         ui: UiConfig::default(),
         debug: false,
         agents_md_path: Some("/nonexistent/path/AGENTS.md".to_string()),
+        providers: vec![],
     };
     let context = config.load_agents_context();
     // Should return Some since local AGENTS.md exists in the project

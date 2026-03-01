@@ -1,4 +1,4 @@
-use crate::app::{App, PanelState};
+use crate::app::{App, PanelState, SlashCommand};
 use crate::llm::{LlmEvent, Message};
 use crate::tools;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -111,6 +111,10 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             });
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
 
+            // Show error in status bar for 5 seconds (300 frames at 60fps)
+            app.error_message = Some(format!("Error: {}", &e[..e.len().min(50)]));
+            app.last_error_frame = app.frame_count;
+
             // Auto-scroll to bottom if we were at bottom before message added
             if was_at_bottom {
                 let total_lines = app.calculate_total_lines();
@@ -200,6 +204,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             duration_ms,
             error_message,
             model_name,
+            provider,
         } =>
         {
             #[allow(clippy::collapsible_if)]
@@ -211,6 +216,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     duration_ms,
                     error_message.as_deref(),
                     model_name.as_deref(),
+                    provider.as_deref(),
                 ) {
                     app.set_error(format!("DB error: {}", e));
                 }
@@ -245,6 +251,16 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     // Handle file picker keys if picker is open
     if app.file_picker.is_some() {
         return handle_file_picker_key(app, key);
+    }
+
+    // Handle slash picker keys if picker is open
+    if app.slash_picker.is_some() {
+        return handle_slash_picker_key(app, key);
+    }
+
+    // Handle API key input mode
+    if app.api_key_input.is_some() {
+        return handle_api_key_input_key(app, key);
     }
 
     // Handle panel-specific keys
@@ -326,11 +342,51 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
             app.delete_char();
         }
         KeyCode::Char(c) => {
-            if c == '@' {
+            // Handle special input modes first
+            if app.slash_picker.is_some() {
+                // Don't insert into main input - just update picker query
+                app.slash_picker_type(c);
+            } else if app.api_key_input.is_some() {
+                app.handle_api_key_input(c);
+            } else if c == '@' {
                 app.insert_char(c);
                 app.start_file_picker();
+            } else if c == '/' {
+                app.insert_char(c);
+                // Check if this is the start of a slash command
+                let is_at_start = app.cursor_pos == 1;
+                let is_after_space = app.cursor_pos > 1 
+                    && app.input.chars().nth(app.cursor_pos.saturating_sub(2)) == Some(' ');
+                if is_at_start || is_after_space {
+                    // Show command help immediately
+                    app.start_slash_command_help();
+                }
             } else {
                 app.insert_char(c);
+                // Check if we're building a slash command
+                if let Some(picker) = &app.slash_picker {
+                    let slash_start = picker.slash_start;
+                    let current_text = &app.input[slash_start..app.cursor_pos];
+                    
+                    // Detect which command based on what was typed
+                    if current_text == "/model" || current_text.starts_with("/model ") {
+                        // User typed "/model" - show model picker
+                        if picker.all_entries.is_empty() {
+                            app.slash_picker = None;
+                            let query = current_text.strip_prefix("/model").unwrap_or("").trim_start().to_string();
+                            app.start_slash_picker(SlashCommand::Model, &query);
+                        }
+                    } else if current_text == "/connect" || current_text.starts_with("/connect ") {
+                        // User typed "/connect" - switch to connect mode
+                        if picker.all_entries.is_empty() {
+                            app.slash_picker = None;
+                            app.start_slash_picker(SlashCommand::Connect, "");
+                        }
+                    } else if !current_text.starts_with("/model") && !current_text.starts_with("/connect") {
+                        // Not a recognized slash command, cancel the picker
+                        app.slash_picker = None;
+                    }
+                }
             }
         }
         KeyCode::Up => {
@@ -368,6 +424,9 @@ fn handle_control_panel_key(app: &mut App, key: KeyEvent) {
             app.panel_state = PanelState::Debug;
             app.refresh_debug_logs();
             app.debug_scroll = 0;
+        }
+        KeyCode::Char('p') | KeyCode::Char('P') => {
+            app.cycle_provider();
         }
         _ => {}
     }
@@ -506,6 +565,72 @@ fn handle_file_picker_key(app: &mut App, key: KeyEvent) -> bool {
         }
         KeyCode::Char(c) => {
             app.file_picker_type(c);
+        }
+        _ => {}
+    }
+    true
+}
+
+/// Handle slash picker specific keys
+fn handle_slash_picker_key(app: &mut App, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Up => {
+            app.slash_picker_up();
+        }
+        KeyCode::Down => {
+            app.slash_picker_down();
+        }
+        KeyCode::Enter | KeyCode::Tab => {
+            app.slash_picker_select();
+        }
+        KeyCode::Esc | KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Remove slash command from input and close picker
+            if let Some(picker) = &app.slash_picker {
+                let slash_start = picker.slash_start;
+                app.slash_picker = None;
+                if slash_start < app.input.len() {
+                    app.input.drain(slash_start..app.cursor_pos);
+                    app.cursor_pos = slash_start;
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            if !app.slash_picker_backspace() {
+                // Backspaced past start, close picker
+                if let Some(picker) = &app.slash_picker {
+                    let slash_start = picker.slash_start;
+                    app.slash_picker = None;
+                    if slash_start < app.input.len() {
+                        app.input.drain(slash_start..app.cursor_pos);
+                        app.cursor_pos = slash_start;
+                    }
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            app.slash_picker_type(c);
+        }
+        _ => {}
+    }
+    true
+}
+
+/// Handle API key input specific keys
+fn handle_api_key_input_key(app: &mut App, key: KeyEvent) -> bool {
+    match key.code {
+        KeyCode::Enter => {
+            app.submit_api_key();
+        }
+        KeyCode::Esc => {
+            app.api_key_input = None;
+        }
+        KeyCode::Backspace => {
+            if !app.handle_api_key_backspace() {
+                app.api_key_input = None;
+            }
+        }
+        KeyCode::Char(c) => {
+            app.handle_api_key_input(c);
         }
         _ => {}
     }

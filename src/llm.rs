@@ -43,6 +43,7 @@ pub enum LlmEvent {
         duration_ms: u64,
         error_message: Option<String>,
         model_name: Option<String>,
+        provider: Option<String>,
     },
 }
 
@@ -52,10 +53,12 @@ pub fn call_llm(
     tx: mpsc::Sender<LlmEvent>,
     debug: bool,
     endpoint: &str,
+    api_key: Option<&str>,
     max_tokens: usize,
     temperature: Option<f32>,
     system_prompt: Option<String>,
-    model_name: String,
+    model_id: String,
+    provider_name: Option<String>,
     cancel_flag: Arc<AtomicBool>,
 ) {
     let start_time = Instant::now();
@@ -75,7 +78,8 @@ pub fn call_llm(
                     full_response: None,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     error_message: Some(err_msg),
-                    model_name: Some(model_name.clone()),
+                    model_name: Some(model_id.clone()),
+                    provider: provider_name.clone(),
                 });
             }
             return;
@@ -116,7 +120,7 @@ pub fn call_llm(
     }
 
     let mut body = json!({
-        "model": "local",
+        "model": model_id,
         "max_tokens": max_tokens,
         "stream": true,
         "messages": msg_payload,
@@ -133,10 +137,19 @@ pub fn call_llm(
 
     let request_body = serde_json::to_string_pretty(&body).unwrap_or_default();
 
-    let response = match client
-        .post(format!("{}/v1/chat/completions", endpoint))
-        .json(&body)
-        .send()
+    // Trim trailing /v1 from endpoint to avoid /v1/v1/chat/completions
+    // But keep /inference as it's part of Fireworks base URL
+    let base_endpoint = endpoint.trim_end_matches("/v1");
+    let mut request = client
+        .post(format!("{}/v1/chat/completions", base_endpoint))
+        .json(&body);
+    
+    // Add Authorization header if API key is provided
+    if let Some(key) = api_key {
+        request = request.header("Authorization", format!("Bearer {}", key));
+    }
+    
+    let response = match request.send()
     {
         Ok(r) => r,
         Err(e) => {
@@ -149,12 +162,33 @@ pub fn call_llm(
                     full_response: None,
                     duration_ms: start_time.elapsed().as_millis() as u64,
                     error_message: Some(err_msg),
-                    model_name: Some(model_name.clone()),
+                    model_name: Some(model_id.clone()),
+                    provider: provider_name.clone(),
                 });
             }
             return;
         }
     };
+
+    // Check for error status codes
+    let status = response.status();
+    if !status.is_success() {
+        let err_body = response.text().unwrap_or_default();
+        let err_msg = format!("API error {}: {}", status, &err_body[..err_body.len().min(200)]);
+        let _ = tx.send(LlmEvent::Error(err_msg.clone()));
+        if debug {
+            let _ = tx.send(LlmEvent::ApiLog {
+                request_body,
+                response_body: Some(err_body),
+                full_response: None,
+                duration_ms: start_time.elapsed().as_millis() as u64,
+                error_message: Some(err_msg),
+                model_name: Some(model_id.clone()),
+                provider: provider_name.clone(),
+            });
+        }
+        return;
+    }
 
     let mut response_blocks: Vec<String> = Vec::new();
 
@@ -392,7 +426,8 @@ pub fn call_llm(
             full_response,
             duration_ms: start_time.elapsed().as_millis() as u64,
             error_message: None,
-            model_name: Some(model_name),
+            model_name: Some(model_id),
+            provider: provider_name,
         });
     }
 

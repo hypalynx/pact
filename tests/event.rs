@@ -7,15 +7,7 @@ use rusqlite::Connection;
 
 /// Create a test app with in-memory database
 fn create_test_app() -> App {
-    let app = App::new(
-        false,
-        "http://127.0.0.1:7777".to_string(),
-        1024,
-        None,
-        "build".to_string(),
-        Default::default(),
-        None,
-    );
+    let app = App::new(false, None, "build".to_string(), Default::default(), None);
 
     let mut app = app;
     match create_temp_db() {

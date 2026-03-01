@@ -8,15 +8,7 @@ use rusqlite::Connection;
 
 /// Create a test app with in-memory database (no database side effects)
 fn create_test_app() -> App {
-    let app = App::new(
-        false,
-        "http://127.0.0.1:7777".to_string(),
-        1024,
-        None,
-        "build".to_string(),
-        Default::default(),
-        None,
-    );
+    let app = App::new(false, None, "build".to_string(), Default::default(), None);
 
     // Replace the real database with an in-memory one for testing
     let mut app = app;
@@ -338,8 +330,6 @@ fn test_no_auto_scroll_when_scrolled_up() {
 fn test_agents_context_stored_in_app() {
     let app = App::new(
         false,
-        "http://127.0.0.1:7777".to_string(),
-        1024,
         None,
         "build".to_string(),
         Default::default(),
@@ -367,8 +357,6 @@ fn test_agents_context_replaces_system_prompt() {
 
     let app = App::new(
         false,
-        "http://127.0.0.1:7777".to_string(),
-        1024,
         None,
         "build".to_string(),
         modes,
@@ -410,8 +398,6 @@ fn test_agents_context_none_uses_only_mode_prompt() {
 
     let app = App::new(
         false,
-        "http://127.0.0.1:7777".to_string(),
-        1024,
         None,
         "build".to_string(),
         modes,
