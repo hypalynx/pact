@@ -153,14 +153,13 @@ pub fn call_llm(
     let mut request = client
         .post(format!("{}/v1/chat/completions", base_endpoint))
         .json(&body);
-    
+
     // Add Authorization header if API key is provided
     if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {}", key));
     }
-    
-    let response = match request.send()
-    {
+
+    let response = match request.send() {
         Ok(r) => r,
         Err(e) => {
             let err_msg = format!("Request failed: {}", e);
@@ -184,7 +183,11 @@ pub fn call_llm(
     let status = response.status();
     if !status.is_success() {
         let err_body = response.text().unwrap_or_default();
-        let err_msg = format!("API error {}: {}", status, &err_body[..err_body.len().min(200)]);
+        let err_msg = format!(
+            "API error {}: {}",
+            status,
+            &err_body[..err_body.len().min(200)]
+        );
         let _ = tx.send(LlmEvent::Error(err_msg.clone()));
         if debug {
             let _ = tx.send(LlmEvent::ApiLog {

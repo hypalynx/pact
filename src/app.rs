@@ -129,14 +129,14 @@ pub struct App {
     pub agents_context: Option<String>,
     pub file_picker: Option<FilePicker>,
     pub file_picker_map: IndexMap<String, String>, // Map filename -> full relative path
-    
+
     // Provider management
     pub providers: Vec<crate::db::Provider>,
     pub active_provider: Option<crate::db::Provider>,
-    
+
     // Slash command picker
     pub slash_picker: Option<SlashCommandPicker>,
-    
+
     // API key input mode
     pub api_key_input: Option<String>, // When Some, we're in API key input mode
 }
@@ -235,22 +235,23 @@ impl App {
         if self.providers.is_empty() {
             return;
         }
-        
+
         // Find current provider index
-        let current_idx = self.active_provider
+        let current_idx = self
+            .active_provider
             .as_ref()
             .and_then(|ap| self.providers.iter().position(|p| p.name == ap.name))
             .unwrap_or(0);
-        
+
         // Get next provider
         let next_idx = (current_idx + 1) % self.providers.len();
         let next_provider = self.providers[next_idx].clone();
-        
+
         // Update active provider in DB and app
         if let Some(db) = &self.db {
             let _ = db.set_active_provider(&next_provider.name);
         }
-        
+
         self.active_provider = Some(next_provider.clone());
         self.api_endpoint = next_provider.endpoint.clone();
         self.error_message = Some(format!("Switched to provider: {}", next_provider.name));
@@ -315,11 +316,15 @@ impl App {
         let temperature = self.temperature;
 
         // Get provider info (API key and model) from active provider if available
-        let api_key = self.active_provider.as_ref().and_then(|p| p.api_key.clone());
+        let api_key = self
+            .active_provider
+            .as_ref()
+            .and_then(|p| p.api_key.clone());
         let provider_name = self.active_provider.as_ref().map(|p| p.name.clone());
-        
+
         // Get model ID from active provider's default_model, or use "local" as fallback
-        let model_id = self.active_provider
+        let model_id = self
+            .active_provider
             .as_ref()
             .and_then(|p| p.default_model.clone())
             .unwrap_or_else(|| "local".to_string());
@@ -934,7 +939,7 @@ impl App {
 
     pub fn start_slash_command_help(&mut self) {
         let slash_start = self.cursor_pos.saturating_sub(1);
-        
+
         // Show help with available commands
         self.slash_picker = Some(SlashCommandPicker {
             command: SlashCommand::Model, // Default, will switch
@@ -954,12 +959,12 @@ impl App {
 
     pub fn start_slash_picker(&mut self, command: SlashCommand, initial_text: &str) {
         let slash_start = self.cursor_pos.saturating_sub(1 + initial_text.len());
-        
+
         let all_entries = match command {
             SlashCommand::Model => self.fetch_available_models(),
             SlashCommand::Connect => vec!["Enter API key for current provider".to_string()],
         };
-        
+
         self.slash_picker = Some(SlashCommandPicker {
             command,
             query: initial_text.to_string(),
@@ -980,13 +985,13 @@ impl App {
             {
                 return models;
             }
-            
+
             // Otherwise try to fetch from API
             let models = crate::utils::fetch_available_models(
                 &provider.endpoint,
                 provider.api_key.as_deref(),
             );
-            
+
             if !models.is_empty() {
                 models
             } else {
@@ -1080,31 +1085,30 @@ impl App {
                     return;
                 }
             }
-            
+
             // Regular command handling
             match picker.command {
                 SlashCommand::Model => {
                     // Get model from selection or use typed query as manual entry
-                    let model = picker.filtered.get(picker.selected)
-                        .cloned()
-                        .or_else(|| {
-                            // If nothing selected but user typed something, use that as manual model
-                            if !picker.query.is_empty() {
-                                Some(picker.query.clone())
-                            } else {
-                                None
-                            }
-                        });
-                    
+                    let model = picker.filtered.get(picker.selected).cloned().or_else(|| {
+                        // If nothing selected but user typed something, use that as manual model
+                        if !picker.query.is_empty() {
+                            Some(picker.query.clone())
+                        } else {
+                            None
+                        }
+                    });
+
                     if let Some(model) = model {
                         // Expand short form "provider/model" to full ID if needed
-                        let full_model_id = if model.contains('/') && !model.starts_with("accounts/") {
-                            // User entered "fireworks/kimi-k2p5" format
-                            format!("accounts/{}", model)
-                        } else {
-                            model
-                        };
-                        
+                        let full_model_id =
+                            if model.contains('/') && !model.starts_with("accounts/") {
+                                // User entered "fireworks/kimi-k2p5" format
+                                format!("accounts/{}", model)
+                            } else {
+                                model
+                            };
+
                         // Update the provider's default_model in memory
                         if let Some(provider) = &mut self.active_provider {
                             provider.default_model = Some(full_model_id.clone());
@@ -1158,17 +1162,17 @@ impl App {
             && let Some(provider) = self.active_provider.as_ref()
         {
             let provider_name = provider.name.clone();
-            
+
             // Update the provider's API key in memory
             let mut updated_provider = provider.clone();
             updated_provider.api_key = Some(key.clone());
             self.active_provider = Some(updated_provider);
-            
+
             // Update in database
             if let Some(db) = &self.db {
                 let _ = db.update_provider_api_key(&provider_name, &key);
             }
-            
+
             self.error_message = Some(format!("API key set for {}", provider_name));
             self.last_error_frame = self.frame_count;
         }

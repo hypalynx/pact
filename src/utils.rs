@@ -151,14 +151,14 @@ pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<Stri
     // But keep /inference as it's part of Fireworks base URL
     let base = endpoint.trim_end_matches("/v1");
     let url = format!("{}/v1/models", base);
-    
+
     let mut request = client.get(&url);
-    
+
     // Add Authorization header if API key is provided
     if let Some(key) = api_key {
         request = request.header("Authorization", format!("Bearer {}", key));
     }
-    
+
     if let Ok(response) = request.send()
         && let Ok(text) = response.text()
         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
@@ -168,19 +168,20 @@ pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<Stri
             return data
                 .iter()
                 .filter_map(|model| {
-                    model.get("id")
+                    model
+                        .get("id")
                         .and_then(|id| id.as_str())
                         .map(|s| s.to_string())
                 })
                 .collect();
         }
-        
+
         // Try single model response format (llama.cpp server)
         if let Some(id) = json.get("id").and_then(|id| id.as_str()) {
             return vec![id.to_string()];
         }
     }
-    
+
     // Return empty list - no fallback
     Vec::new()
 }

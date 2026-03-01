@@ -45,7 +45,7 @@ fn init_providers_from_config(config: &Config) {
                     provider.default_model.as_deref(),
                 );
             }
-            
+
             // Update models list from config (whether provider is new or existing)
             if !provider.models.is_empty() {
                 let _ = db.set_provider_models(&provider.name, &provider.models);

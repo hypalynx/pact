@@ -362,7 +362,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
                 app.insert_char(c);
                 // Check if this is the start of a slash command
                 let is_at_start = app.cursor_pos == 1;
-                let is_after_space = app.cursor_pos > 1 
+                let is_after_space = app.cursor_pos > 1
                     && app.input.chars().nth(app.cursor_pos.saturating_sub(2)) == Some(' ');
                 if is_at_start || is_after_space {
                     // Show command help immediately
@@ -374,13 +374,17 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
                 if let Some(picker) = &app.slash_picker {
                     let slash_start = picker.slash_start;
                     let current_text = &app.input[slash_start..app.cursor_pos];
-                    
+
                     // Detect which command based on what was typed
                     if current_text == "/model" || current_text.starts_with("/model ") {
                         // User typed "/model" - show model picker
                         if picker.all_entries.is_empty() {
                             app.slash_picker = None;
-                            let query = current_text.strip_prefix("/model").unwrap_or("").trim_start().to_string();
+                            let query = current_text
+                                .strip_prefix("/model")
+                                .unwrap_or("")
+                                .trim_start()
+                                .to_string();
                             app.start_slash_picker(SlashCommand::Model, &query);
                         }
                     } else if current_text == "/connect" || current_text.starts_with("/connect ") {
@@ -389,7 +393,9 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
                             app.slash_picker = None;
                             app.start_slash_picker(SlashCommand::Connect, "");
                         }
-                    } else if !current_text.starts_with("/model") && !current_text.starts_with("/connect") {
+                    } else if !current_text.starts_with("/model")
+                        && !current_text.starts_with("/connect")
+                    {
                         // Not a recognized slash command, cancel the picker
                         app.slash_picker = None;
                     }

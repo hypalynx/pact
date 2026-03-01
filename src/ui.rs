@@ -504,15 +504,18 @@ fn draw_control_panel(app: &App, frame: &mut Frame) {
 
     // Show provider info and switch option
     lines.push(Line::from(""));
-    let current_provider = app.active_provider.as_ref()
+    let current_provider = app
+        .active_provider
+        .as_ref()
         .map(|p| p.name.as_str())
         .unwrap_or("local");
-    let current_model = app.active_provider
+    let current_model = app
+        .active_provider
         .as_ref()
         .and_then(|p| p.default_model.as_ref())
         .map(|m| m.as_str())
         .unwrap_or("local");
-    
+
     if app.providers.len() > 1 {
         lines.push(Line::from(vec![Span::styled(
             format!("[P] Switch Provider ({})", current_provider),
@@ -524,7 +527,7 @@ fn draw_control_panel(app: &App, frame: &mut Frame) {
             Style::default().fg(Color::DarkGray),
         )]));
     }
-    
+
     // Show current model
     lines.push(Line::from(vec![Span::styled(
         format!("Model: {}", current_model),
@@ -610,7 +613,9 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     } else {
         0
     };
-    let provider_name = app.active_provider.as_ref()
+    let provider_name = app
+        .active_provider
+        .as_ref()
         .map(|p| p.name.as_str())
         .unwrap_or("local");
     // Use app.model_name (from server info) if available, otherwise fall back to provider's default_model
@@ -726,7 +731,7 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
         if app.input_rect.y >= height {
             // Check if showing help menu (entries contain help text)
             let is_help_mode = picker.filtered.iter().any(|e| e.contains(" - "));
-            
+
             let title = if is_help_mode {
                 "Commands".to_string()
             } else {
@@ -735,7 +740,7 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
                     crate::app::SlashCommand::Connect => "Enter API Key".to_string(),
                 }
             };
-            
+
             let block = Block::default()
                 .borders(Borders::ALL)
                 .title(title)
@@ -759,7 +764,7 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
             let end_idx = (start_idx + max_visible).min(picker.filtered.len());
 
             let mut lines = Vec::new();
-            
+
             // Show entries if there are any
             if !picker.filtered.is_empty() {
                 for (i, entry) in picker.filtered[start_idx..end_idx].iter().enumerate() {
@@ -782,7 +787,10 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
                 // No models available - show hint for manual entry
                 lines.push(Line::from(vec![
                     Span::styled("No models found. ", Style::default().fg(Color::DarkGray)),
-                    Span::styled("Type model ID and press Enter", Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        "Type model ID and press Enter",
+                        Style::default().fg(Color::Yellow),
+                    ),
                 ]));
                 if !picker.query.is_empty() {
                     lines.push(Line::from(vec![
