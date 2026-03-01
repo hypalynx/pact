@@ -45,6 +45,10 @@ pub enum LlmEvent {
         model_name: Option<String>,
         provider: Option<String>,
     },
+    ServerInfo {
+        model_name: String,
+        context_window: usize,
+    },
 }
 
 #[allow(clippy::too_many_arguments)]

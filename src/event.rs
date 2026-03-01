@@ -222,6 +222,13 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 }
             }
         }
+        LlmEvent::ServerInfo {
+            model_name,
+            context_window,
+        } => {
+            app.model_name = model_name;
+            app.context_window = context_window;
+        }
     }
 }
 

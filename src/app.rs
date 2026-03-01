@@ -598,10 +598,17 @@ impl App {
         const CHECK_INTERVAL: u32 = 188;
 
         if self.frame_count.saturating_sub(self.last_server_check) >= CHECK_INTERVAL {
-            let server_info = crate::utils::fetch_server_info(&self.api_endpoint);
-            self.model_name = server_info.model_name;
-            self.context_window = server_info.context_window;
             self.last_server_check = self.frame_count;
+
+            let endpoint = self.api_endpoint.clone();
+            let tx = self.tx.clone();
+            std::thread::spawn(move || {
+                let server_info = crate::utils::fetch_server_info(&endpoint);
+                let _ = tx.send(LlmEvent::ServerInfo {
+                    model_name: server_info.model_name,
+                    context_window: server_info.context_window,
+                });
+            });
         }
     }
 
