@@ -56,14 +56,29 @@ pub fn wrap_text(text: &str, width: usize) -> Vec<String> {
         }
         let mut current_line = String::new();
         for word in paragraph.split_whitespace() {
+            let word_len = word.len();
             if current_line.is_empty() {
-                current_line = word.to_string();
-            } else if current_line.len() + 1 + word.len() <= width {
+                // Starting a new line with this word
+                if word_len > width {
+                    // Long word doesn't fit on any line - wrap it to its own line now
+                    // (it will overflow visually, which is acceptable)
+                    lines.push(word.to_string());
+                } else {
+                    current_line = word.to_string();
+                }
+            } else if current_line.len() + 1 + word_len <= width {
+                // Word fits on current line
                 current_line.push(' ');
                 current_line.push_str(word);
             } else {
-                lines.push(current_line);
-                current_line = word.to_string();
+                // Word doesn't fit - wrap to new line
+                lines.push(std::mem::take(&mut current_line));
+                if word_len > width {
+                    // Long word gets its own line
+                    lines.push(word.to_string());
+                } else {
+                    current_line = word.to_string();
+                }
             }
         }
         if !current_line.is_empty() {

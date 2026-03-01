@@ -49,6 +49,27 @@ fn test_wrap_text_single_long_word() {
 }
 
 #[test]
+fn test_wrap_text_long_word_wraps_early() {
+    // When a word is wider than the width, it should wrap to its own line
+    // rather than waiting for the next word to trigger wrapping
+    let text = "hi Supercalifragilisticexpialidocious";
+    let lines = wrap_text(text, 10);
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "hi");
+    assert_eq!(lines[1], "Supercalifragilisticexpialidocious");
+}
+
+#[test]
+fn test_wrap_text_long_word_after_partial_line() {
+    // A long word should wrap to a new line even when following partial text
+    let text = "hello world Supercalifragilisticexpialidocious";
+    let lines = wrap_text(text, 15);
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "hello world");
+    assert_eq!(lines[1], "Supercalifragilisticexpialidocious");
+}
+
+#[test]
 fn test_wrap_text_exact_fit() {
     let text = "Hello";
     let lines = wrap_text(text, 5);
