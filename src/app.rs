@@ -3,7 +3,8 @@ use crate::llm::{LlmEvent, Message};
 use crate::text::wrap_text;
 use indexmap::IndexMap;
 use ratatui::layout::Rect;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PanelState {
@@ -96,7 +97,10 @@ pub struct App {
     pub error_message: Option<String>,
     pub last_error_frame: u32,
     pub exit_confirm_frame: u32,
+    pub cancel_confirm_frame: u32,
+    pub last_cancel_frame: u32,
     pub panel_state: PanelState,
+    pub cancel_flag: Arc<AtomicBool>,
     pub debug_scroll: usize,
     pub debug_filter_errors: bool,
     pub debug_logs: Vec<crate::db::ApiLogEntry>,
@@ -169,7 +173,10 @@ impl App {
             error_message: db_error,
             last_error_frame: u32::MAX,
             exit_confirm_frame: u32::MAX,
+            cancel_confirm_frame: u32::MAX,
+            last_cancel_frame: u32::MAX,
             panel_state: PanelState::None,
+            cancel_flag: Arc::new(AtomicBool::new(false)),
             debug_scroll: 0,
             debug_filter_errors: false,
             debug_logs: Vec::new(),
@@ -229,6 +236,10 @@ impl App {
         self.pending_thinking.clear();
         self.user_scrolled = false;
 
+        // Reset cancellation flag for new call
+        self.cancel_flag.store(false, Ordering::SeqCst);
+        let cancel_flag = Arc::clone(&self.cancel_flag);
+
         let messages = self.messages.clone();
         let tx = self.tx.clone();
         let debug = self.debug;
@@ -256,6 +267,7 @@ impl App {
                 temperature,
                 system_prompt,
                 model_name,
+                cancel_flag,
             );
         });
     }
@@ -644,6 +656,56 @@ impl App {
 
     pub fn reset_exit_confirmation(&mut self) {
         self.exit_confirm_frame = u32::MAX;
+    }
+
+    pub fn is_cancel_confirming(&self) -> bool {
+        // Show confirmation for ~2 seconds (roughly 125 frames at 16ms)
+        // Don't show if we've never confirmed (cancel_confirm_frame is u32::MAX)
+        if self.cancel_confirm_frame == u32::MAX {
+            return false;
+        }
+        self.frame_count.saturating_sub(self.cancel_confirm_frame) < 125
+    }
+
+    pub fn set_cancel_confirmation(&mut self) {
+        self.cancel_confirm_frame = self.frame_count;
+    }
+
+    pub fn reset_cancel_confirmation(&mut self) {
+        self.cancel_confirm_frame = u32::MAX;
+        // Don't reset last_cancel_frame here - that tracks when we actually cancelled
+    }
+
+    pub fn cancel_current_call(&mut self) {
+        // Set cancellation flag to stop the LLM thread
+        // Decrement counter immediately to stop loading animation
+        if self.active_llm_calls > 0 {
+            self.cancel_flag.store(true, Ordering::SeqCst);
+            self.active_llm_calls = self.active_llm_calls.saturating_sub(1);
+            // Track when we cancelled to show "Call cancelled" status
+            self.last_cancel_frame = self.frame_count;
+            // Push an assistant message about the cancellation
+            // Using assistant role with special marker to indicate it was cancelled
+            let cancel_msg = Message {
+                role: "assistant".to_string(),
+                text: "_Call cancelled by user_".to_string(),
+                is_tool_result: false,
+                thinking: None,
+                tool_result_content: None,
+            };
+            self.messages.push(cancel_msg.clone());
+            if let Some(db) = &self.db {
+                let _ = db.save_message(&cancel_msg);
+            }
+        }
+    }
+
+    pub fn was_just_cancelled(&self) -> bool {
+        // Show "Call cancelled" for ~2 seconds
+        if self.last_cancel_frame == u32::MAX {
+            return false;
+        }
+        self.frame_count.saturating_sub(self.last_cancel_frame) < 125
     }
 
     pub fn refresh_debug_logs(&mut self) {

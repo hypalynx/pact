@@ -195,6 +195,11 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
         app.reset_exit_confirmation();
     }
 
+    // Reset cancel confirmation on any keypress other than Esc
+    if !matches!(key.code, KeyCode::Esc) {
+        app.reset_cancel_confirmation();
+    }
+
     // Ctrl+G toggles control panel
     if let KeyCode::Char('g') = key.code
         && key.modifiers.contains(KeyModifiers::CONTROL)
@@ -226,6 +231,18 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
 
     // Handle main input keys
     match key.code {
+        KeyCode::Esc => {
+            if app.input.is_empty() && app.active_llm_calls > 0 {
+                if app.is_cancel_confirming() {
+                    // Second ESC press - actually cancel
+                    app.cancel_current_call();
+                    app.reset_cancel_confirmation();
+                } else {
+                    // First ESC press - show confirmation in status bar
+                    app.set_cancel_confirmation();
+                }
+            }
+        }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             if app.input.is_empty() {
                 if app.is_exit_confirming() {

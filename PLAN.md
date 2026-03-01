@@ -42,9 +42,9 @@
     `Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf` => `Qwen3 Coder`
   - [ ] add vertical margin to user messages in the messages
     buffer/section
-  - [ ] esc with no user input should cancel current
-    inference/api calls (with a confirmation status message so
-    you have to press twice to avoid accidental cancels)
+   - [x] esc with no user input should cancel current
+     inference/api calls (with a confirmation status message so
+     you have to press twice to avoid accidental cancels)
   - [ ] stop hook or.. well a stop hook that is smart i.e when
     the llm/agent has finished we run the verify script IF an
     edit/file has been created kind of thing (so tracking tool

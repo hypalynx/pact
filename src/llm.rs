@@ -2,7 +2,8 @@ use crate::tools;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::{BufRead, BufReader};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -50,6 +51,7 @@ pub fn call_llm(
     temperature: Option<f32>,
     system_prompt: Option<String>,
     model_name: String,
+    cancel_flag: Arc<AtomicBool>,
 ) {
     let start_time = Instant::now();
 
@@ -160,6 +162,13 @@ pub fn call_llm(
     let reader = BufReader::new(response);
 
     for result in reader.lines() {
+        // Check if cancelled - exit early
+        if cancel_flag.load(Ordering::SeqCst) {
+            // Send Done to signal clean exit
+            let _ = tx.send(LlmEvent::Done);
+            return;
+        }
+
         let Ok(line) = result else { continue };
 
         if line == "data: [DONE]" {

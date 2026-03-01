@@ -475,7 +475,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
     if app.has_error() {
         if let Some(ref error) = app.error_message {
             left_spans.push(Span::styled(
-                format!("⚠ {}", error),
+                error.to_string(),
                 Style::default().fg(Color::Red),
             ));
         }
@@ -484,10 +484,20 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
             "Press Ctrl+C again to exit",
             Style::default().fg(Color::DarkGray),
         ));
+    } else if app.is_cancel_confirming() {
+        left_spans.push(Span::styled(
+            "Press ESC again to cancel current call",
+            Style::default().fg(Color::DarkGray),
+        ));
     } else if app.is_copying() {
         left_spans.push(Span::styled(
             "Copied to clipboard!",
             Style::default().fg(Color::Yellow),
+        ));
+    } else if app.was_just_cancelled() {
+        left_spans.push(Span::styled(
+            "Call cancelled",
+            Style::default().fg(Color::DarkGray),
         ));
     } else {
         let pwd = get_pwd_display();
