@@ -522,20 +522,6 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
                 braille.to_string(),
                 Style::default().fg(Color::DarkGray),
             ));
-
-            // Show progress percentage if available and 1 second has passed
-            // (to avoid flashing on fast inference - ~60 frames at 60fps)
-            if let Some(progress) = app.progress {
-                let frames_since_start = app.frame_count.saturating_sub(app.progress_start_frame);
-                if frames_since_start >= 60 {
-                    let percentage = (progress * 100.0) as u32;
-                    left_spans.push(Span::raw(" "));
-                    left_spans.push(Span::styled(
-                        format!("{}%", percentage),
-                        Style::default().fg(Color::DarkGray),
-                    ));
-                }
-            }
         }
     }
 

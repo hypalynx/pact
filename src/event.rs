@@ -80,10 +80,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 let _ = db.save_message(&msg);
             }
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
-            if app.active_llm_calls == 0 {
-                app.progress = None;
-                app.progress_start_frame = u32::MAX;
-            }
 
             // Auto-scroll to bottom if we were at bottom before message added
             if was_at_bottom {
@@ -110,10 +106,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 tool_result_content: None,
             });
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
-            if app.active_llm_calls == 0 {
-                app.progress = None;
-                app.progress_start_frame = u32::MAX;
-            }
 
             // Auto-scroll to bottom if we were at bottom before message added
             if was_at_bottom {
@@ -169,12 +161,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             });
             app.send_to_llm();
         }
-        LlmEvent::Progress(p) => {
-            if app.progress.is_none() {
-                app.progress_start_frame = app.frame_count;
-            }
-            app.progress = Some(p);
-        }
+
         LlmEvent::ApiLog {
             request_body,
             response_body,

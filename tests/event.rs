@@ -261,17 +261,6 @@ fn test_handle_usage_event_accumulates_tokens() {
 }
 
 #[test]
-fn test_handle_progress_event() {
-    let mut app = create_test_app();
-
-    assert!(app.progress.is_none());
-
-    handle_llm_event(&mut app, LlmEvent::Progress(0.5));
-
-    assert_eq!(app.progress, Some(0.5));
-}
-
-#[test]
 fn test_active_llm_calls_counter_with_tool_calls() {
     let mut app = create_test_app();
     app.messages_rect = Rect {
@@ -319,7 +308,6 @@ fn test_active_llm_calls_counter_with_tool_calls() {
         app.active_llm_calls, 0,
         "Loading should stop when all calls complete"
     );
-    assert_eq!(app.progress, None);
 }
 
 #[test]

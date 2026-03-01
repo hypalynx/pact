@@ -20,7 +20,6 @@ pub struct Message {
 pub enum LlmEvent {
     Token(String),
     Thinking(String),
-    Progress(f32),
     Done,
     Error(String),
     Usage {
@@ -310,10 +309,6 @@ pub fn call_llm(
                 }
             }
 
-            // Check for progress (llama.cpp extension)
-            if let Some(progress) = json_val.get("progress").and_then(|p| p.as_f64()) {
-                let _ = tx.send(LlmEvent::Progress(progress as f32));
-            }
         }
     }
 
