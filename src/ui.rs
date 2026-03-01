@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::text::{parse_markdown_line, wrap_text};
+use crate::text::{cursor_position, parse_markdown_line, wrap_text};
 use crate::utils::{format_tokens, get_git_branch, get_pwd_display};
 use ratatui::Frame;
 use ratatui::{
@@ -385,7 +385,7 @@ fn draw_input(app: &App, frame: &mut Frame) {
     frame.render_widget(input, inner);
 
     if app.active_llm_calls == 0 {
-        let (cursor_x, cursor_y) = cursor_position(&app.input, app.cursor_pos);
+        let (cursor_x, cursor_y) = cursor_position(&app.input, app.cursor_pos, available_width);
         let cursor_pos = ratatui::layout::Position {
             x: inner.x + cursor_x as u16,
             y: inner.y + cursor_y as u16,
@@ -443,26 +443,6 @@ fn colorize_input(input: &str) -> Vec<Span<'static>> {
     }
 
     spans
-}
-
-fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {
-    let mut x = 0;
-    let mut y = 0;
-    let mut byte_count = 0;
-
-    for c in input.chars() {
-        if byte_count >= cursor_pos {
-            break;
-        }
-        if c == '\n' {
-            y += 1;
-            x = 0;
-        } else {
-            x += 1;
-        }
-        byte_count += c.len_utf8();
-    }
-    (x, y)
 }
 
 fn draw_control_panel(_app: &App, frame: &mut Frame) {
@@ -662,8 +642,10 @@ fn draw_file_picker(app: &App, frame: &mut Frame) {
 
 fn draw_debug_modal(app: &App, frame: &mut Frame) {
     let frame_area = frame.area();
-    let modal_width = (frame_area.width * DEBUG_MODAL_WIDTH_PERCENT / 10).max(DEBUG_MODAL_MIN_WIDTH);
-    let modal_height = (frame_area.height * DEBUG_MODAL_HEIGHT_PERCENT / 10).max(DEBUG_MODAL_MIN_HEIGHT);
+    let modal_width =
+        (frame_area.width * DEBUG_MODAL_WIDTH_PERCENT / 10).max(DEBUG_MODAL_MIN_WIDTH);
+    let modal_height =
+        (frame_area.height * DEBUG_MODAL_HEIGHT_PERCENT / 10).max(DEBUG_MODAL_MIN_HEIGHT);
 
     let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
     let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
