@@ -135,7 +135,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
             }
 
             if msg.is_tool_result {
-                // Tool results already contain a brief summary (e.g., "Reading config.yaml")
+                // Tool results: show summary line first
                 let padded = format!("  {}  ", msg.text);
                 let style = Style::default()
                     .fg(Color::DarkGray)
@@ -143,6 +143,17 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                     .bg(Color::Black);
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
                 text_lines.push(msg.text.clone());
+
+                // Then show the full content (diff for write/edit, full output for others)
+                // Don't use wrap_text for diffs - preserve formatting
+                if let Some(content) = &msg.tool_result_content {
+                    for line_text in content.lines() {
+                        let style = Style::default().fg(Color::DarkGray).bg(Color::Black);
+                        let padded = format!("  {}  ", line_text);
+                        lines.push(Line::from(vec![Span::styled(padded, style)]));
+                        text_lines.push(line_text.to_string());
+                    }
+                }
             } else {
                 // Regular user message
                 let wrapped = wrap_text(&msg.text, available_width);

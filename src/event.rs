@@ -155,14 +155,18 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             // Execute the tool and add result
             let tool_call = tools::ToolCall { name, args };
             let (summary, content) = tools::execute_tool(&tool_call);
-            app.messages.push(Message {
+            let result_msg = Message {
                 role: "user".to_string(),
                 text: summary,
                 is_tool_result: true,
                 thinking: None,
                 tool_result_content: Some(content),
                 tool_call_id: Some(id),
-            });
+            };
+            app.messages.push(result_msg.clone());
+            if let Some(db) = &app.db {
+                let _ = db.save_message(&result_msg);
+            }
             app.send_to_llm();
         }
 
