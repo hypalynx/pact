@@ -61,7 +61,8 @@ fn test_execute_read_tool_success() {
 
     let (summary, content_result) = execute_tool(&tool_call);
     assert!(summary.contains("Reading"));
-    assert_eq!(content_result, content);
+    // Content is not shown in UI for Read tool
+    assert_eq!(content_result, String::new());
 }
 
 #[test]
@@ -133,9 +134,8 @@ fn test_execute_read_tool_large_file() {
 
     let (summary, content_result) = execute_tool(&tool_call);
     assert!(summary.contains("Reading"));
-    assert!(content_result.contains("File too large"));
-    assert!(content_result.contains("65536"));
-    assert!(content_result.len() < large_content.len());
+    // Content is not shown in UI for Read tool, even for large files
+    assert_eq!(content_result, String::new());
 }
 
 #[test]

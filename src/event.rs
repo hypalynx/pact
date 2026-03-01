@@ -123,6 +123,15 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.total_output_tokens += output_tokens;
         }
         LlmEvent::ToolCall { id, name, args } => {
+            // Check if at bottom BEFORE adding content
+            let was_at_bottom = if app.messages_rect.height > 0 {
+                let (at_bottom, _) = app.calculate_scroll_info();
+                at_bottom
+            } else {
+                // Startup: viewport not sized yet, assume at bottom
+                true
+            };
+
             // First, save any pending thinking/response as an assistant message
             // This preserves the LLM's thought process before the tool call
             // Trim trailing newlines to avoid gaps where the <tool_call> was stripped
@@ -167,6 +176,13 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if let Some(db) = &app.db {
                 let _ = db.save_message(&result_msg);
             }
+
+            // Auto-scroll to bottom if we were at bottom before tool result was added
+            if was_at_bottom {
+                let total_lines = app.calculate_total_lines();
+                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
+            }
+
             app.send_to_llm();
         }
 

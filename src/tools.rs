@@ -3,8 +3,6 @@ use similar::{ChangeTag, TextDiff};
 use std::fs;
 use std::path::Path;
 
-const MAX_FILE_SIZE: usize = 65536; // 64KB limit per read
-
 #[derive(Debug, Clone)]
 pub struct ToolCall {
     pub name: String,
@@ -207,12 +205,12 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
                     None => {
                         return (
                             "Error: invalid path".to_string(),
-                            "Error: path contains invalid UTF-8".to_string(),
+                            String::new(),
                         );
                     }
                 }
             }
-            Err(e) => return (format!("Error: {}", e), format!("Error: {}", e)),
+            Err(e) => return (format!("Error: {}", e), String::new()),
         }
     };
 
@@ -224,25 +222,14 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
 
     // Try to read the file
     match fs::read_to_string(&full_path) {
-        Ok(contents) => {
+        Ok(_) => {
             let summary = format!("Reading {}", filename);
-            // Check size
-            if contents.len() > MAX_FILE_SIZE {
-                let truncated = format!(
-                    "File too large ({} bytes, max {}). Showing first {} bytes:\n\n{}",
-                    contents.len(),
-                    MAX_FILE_SIZE,
-                    MAX_FILE_SIZE,
-                    &contents[..MAX_FILE_SIZE]
-                );
-                (summary, truncated)
-            } else {
-                (summary, contents)
-            }
+            // Don't show file content in UI, only summary
+            (summary, String::new())
         }
         Err(e) => {
             let error = format!("Error reading file '{}': {}", path, e);
-            (error.clone(), error)
+            (error.clone(), String::new())
         }
     }
 }
@@ -252,7 +239,7 @@ fn execute_glob(args: &serde_json::Map<String, Value>) -> (String, String) {
         Some(p) => p,
         None => {
             let error = "Error: 'pattern' parameter is required".to_string();
-            return (error.clone(), error);
+            return (error.clone(), String::new());
         }
     };
 
@@ -273,14 +260,14 @@ fn execute_glob(args: &serde_json::Map<String, Value>) -> (String, String) {
                     String::new(),
                 )
             } else {
-                let content = matches.join("\n");
                 let summary = format!("Found {} files matching '{}'", matches.len(), pattern);
-                (summary, content)
+                // Don't show file list in UI, only summary
+                (summary, String::new())
             }
         }
         Err(e) => {
             let error = format!("Error with glob pattern '{}': {}", pattern, e);
-            (error.clone(), error)
+            (error, String::new())
         }
     }
 }
@@ -290,7 +277,7 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         Some(p) => p,
         None => {
             let error = "Error: 'pattern' parameter is required".to_string();
-            return (error.clone(), error);
+            return (error, String::new());
         }
     };
 
@@ -298,7 +285,7 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         Some(p) => p,
         None => {
             let error = "Error: 'files' parameter is required".to_string();
-            return (error.clone(), error);
+            return (error, String::new());
         }
     };
 
@@ -307,7 +294,7 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         Ok(r) => r,
         Err(e) => {
             let error = format!("Invalid regex pattern: {}", e);
-            return (error.clone(), error);
+            return (error.clone(), String::new());
         }
     };
 
@@ -316,7 +303,7 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         Ok(paths) => paths.flatten().collect::<Vec<_>>(),
         Err(e) => {
             let error = format!("Error with glob pattern '{}': {}", files_pattern, e);
-            return (error.clone(), error);
+            return (error, String::new());
         }
     };
 
@@ -327,7 +314,6 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         );
     }
 
-    let mut results = Vec::new();
     let mut match_count = 0;
     let file_count = file_paths.len();
 
@@ -337,28 +323,23 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         }
 
         if let Ok(content) = fs::read_to_string(&file_path) {
-            for (line_num, line) in content.lines().enumerate() {
+            for line in content.lines() {
                 if regex.is_match(line) {
-                    let file_display = file_path
-                        .to_string_lossy()
-                        .trim_start_matches("./")
-                        .to_string();
-                    results.push(format!("{}:{}: {}", file_display, line_num + 1, line));
                     match_count += 1;
                 }
             }
         }
     }
 
-    if results.is_empty() {
+    if match_count == 0 {
         (
             format!("No matches found for pattern: {}", pattern),
             String::new(),
         )
     } else {
-        let content = results.join("\n");
         let summary = format!("Found {} matches in {} files", match_count, file_count);
-        (summary, content)
+        // Don't show match results in UI, only summary
+        (summary, String::new())
     }
 }
 
