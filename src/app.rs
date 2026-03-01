@@ -207,6 +207,7 @@ impl App {
             thinking: None,
             tool_result_content: None,
             tool_call_id: None,
+            tool_name: None,
         };
         self.messages.push(msg.clone());
         self.history_index = None;
@@ -698,6 +699,7 @@ impl App {
                 thinking: None,
                 tool_result_content: None,
                 tool_call_id: None,
+                tool_name: None,
             };
             self.messages.push(cancel_msg.clone());
             if let Some(db) = &self.db {

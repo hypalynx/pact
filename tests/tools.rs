@@ -1,4 +1,4 @@
-use pact::tools::{ToolCall, execute_tool, get_tool_definitions};
+use pact::tools::{execute_tool, get_tool_definitions, ToolCall};
 use serde_json::Value;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -61,8 +61,8 @@ fn test_execute_read_tool_success() {
 
     let (summary, content_result) = execute_tool(&tool_call);
     assert!(summary.contains("Reading"));
-    // Content is not shown in UI for Read tool
-    assert_eq!(content_result, String::new());
+    // Content is returned for LLM to use
+    assert_eq!(content_result, content);
 }
 
 #[test]
@@ -134,8 +134,8 @@ fn test_execute_read_tool_large_file() {
 
     let (summary, content_result) = execute_tool(&tool_call);
     assert!(summary.contains("Reading"));
-    // Content is not shown in UI for Read tool, even for large files
-    assert_eq!(content_result, String::new());
+    // Content is returned for LLM even for large files (may be truncated in future)
+    assert_eq!(content_result, large_content);
 }
 
 #[test]

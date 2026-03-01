@@ -162,14 +162,23 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
                 text_lines.push(msg.text.clone());
 
-                // Then show the full content (diff for write/edit, full output for others)
-                // Don't use wrap_text for diffs - preserve formatting
-                if let Some(content) = &msg.tool_result_content {
-                    for line_text in content.lines() {
-                        let style = Style::default().fg(Color::DarkGray).bg(Color::Black);
-                        let padded = format!("  {}  ", line_text);
-                        lines.push(Line::from(vec![Span::styled(padded, style)]));
-                        text_lines.push(line_text.to_string());
+                // Only show full content for tools that should display their output
+                // Write, Edit, Bash, Webfetch show full content
+                // Read, Glob, Grep only show summary
+                let should_display_content = msg.tool_name.as_ref().map(|name| {
+                    matches!(name.as_str(), "Write" | "Edit" | "Bash" | "Webfetch" |
+                        "write" | "edit" | "bash" | "webfetch")
+                }).unwrap_or(false);
+
+                if should_display_content {
+                    // Don't use wrap_text for diffs - preserve formatting
+                    if let Some(content) = &msg.tool_result_content {
+                        for line_text in content.lines() {
+                            let style = Style::default().fg(Color::DarkGray).bg(Color::Black);
+                            let padded = format!("  {}  ", line_text);
+                            lines.push(Line::from(vec![Span::styled(padded, style)]));
+                            text_lines.push(line_text.to_string());
+                        }
                     }
                 }
             } else {

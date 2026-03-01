@@ -222,14 +222,14 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
 
     // Try to read the file
     match fs::read_to_string(&full_path) {
-        Ok(_) => {
+        Ok(content) => {
             let summary = format!("Reading {}", filename);
-            // Don't show file content in UI, only summary
-            (summary, String::new())
+            // Return content for LLM (first element is UI summary, second is LLM result)
+            (summary, content)
         }
         Err(e) => {
             let error = format!("Error reading file '{}': {}", path, e);
-            (error.clone(), String::new())
+            (error.clone(), error)
         }
     }
 }
@@ -255,14 +255,12 @@ fn execute_glob(args: &serde_json::Map<String, Value>) -> (String, String) {
             matches.sort();
 
             if matches.is_empty() {
-                (
-                    format!("No files match pattern: {}", pattern),
-                    String::new(),
-                )
+                let result = format!("No files match pattern: {}", pattern);
+                (result.clone(), result)
             } else {
                 let summary = format!("Found {} files matching '{}'", matches.len(), pattern);
-                // Don't show file list in UI, only summary
-                (summary, String::new())
+                let result = matches.join("\n");
+                (summary, result)
             }
         }
         Err(e) => {
@@ -314,7 +312,7 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         );
     }
 
-    let mut match_count = 0;
+    let mut matches = Vec::new();
     let file_count = file_paths.len();
 
     for file_path in file_paths {
@@ -323,23 +321,22 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         }
 
         if let Ok(content) = fs::read_to_string(&file_path) {
-            for line in content.lines() {
+            for (line_num, line) in content.lines().enumerate() {
                 if regex.is_match(line) {
-                    match_count += 1;
+                    let path_str = file_path.to_string_lossy();
+                    matches.push(format!("{}:{}: {}", path_str, line_num + 1, line));
                 }
             }
         }
     }
 
-    if match_count == 0 {
-        (
-            format!("No matches found for pattern: {}", pattern),
-            String::new(),
-        )
+    if matches.is_empty() {
+        let result = format!("No matches found for pattern: {}", pattern);
+        (result.clone(), result)
     } else {
-        let summary = format!("Found {} matches in {} files", match_count, file_count);
-        // Don't show match results in UI, only summary
-        (summary, String::new())
+        let summary = format!("Found {} matches in {} files", matches.len(), file_count);
+        let result = matches.join("\n");
+        (summary, result)
     }
 }
 

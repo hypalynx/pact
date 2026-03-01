@@ -199,6 +199,7 @@ fn test_handle_done_event_not_at_bottom_no_auto_scroll() {
             thinking: None,
             tool_result_content: None,
             tool_call_id: None,
+            tool_name: None,
         });
     }
 

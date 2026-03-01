@@ -75,6 +75,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 thinking,
                 tool_result_content: None,
                 tool_call_id: None,
+                tool_name: None,
             };
             app.messages.push(msg.clone());
             if let Some(db) = &app.db {
@@ -106,6 +107,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 thinking: None,
                 tool_result_content: None,
                 tool_call_id: None,
+                tool_name: None,
             });
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
 
@@ -154,6 +156,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     thinking,
                     tool_result_content: None,
                     tool_call_id: None,
+                    tool_name: None,
                 };
                 app.messages.push(msg.clone());
                 if let Some(db) = &app.db {
@@ -162,7 +165,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             }
 
             // Execute the tool and add result
-            let tool_call = tools::ToolCall { name, args };
+            let tool_call = tools::ToolCall { name: name.clone(), args };
             let (summary, content) = tools::execute_tool(&tool_call);
             let result_msg = Message {
                 role: "user".to_string(),
@@ -171,6 +174,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 thinking: None,
                 tool_result_content: Some(content),
                 tool_call_id: Some(id),
+                tool_name: Some(name),
             };
             app.messages.push(result_msg.clone());
             if let Some(db) = &app.db {

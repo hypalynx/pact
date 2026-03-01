@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, params};
+use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 
 pub struct Db {
@@ -49,7 +49,8 @@ impl Db {
                 is_tool_result INTEGER NOT NULL DEFAULT 0,
                 thinking TEXT,
                 tool_call_id TEXT,
-                tool_result_content TEXT
+                tool_result_content TEXT,
+                tool_name TEXT
             );
 
             CREATE TABLE IF NOT EXISTS api_logs (
@@ -75,6 +76,9 @@ impl Db {
             "ALTER TABLE messages ADD COLUMN tool_result_content TEXT",
             [],
         );
+        let _ = self
+            .conn
+            .execute("ALTER TABLE messages ADD COLUMN tool_name TEXT", []);
 
         // Run PRAGMA optimize to analyze tables if they have any data
         self.conn.execute_batch("PRAGMA optimize;")?;
@@ -84,8 +88,8 @@ impl Db {
     pub fn save_message(&self, msg: &crate::llm::Message) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 now,
                 msg.role,
@@ -93,7 +97,8 @@ impl Db {
                 if msg.is_tool_result { 1 } else { 0 },
                 msg.thinking,
                 msg.tool_result_content,
-                msg.tool_call_id
+                msg.tool_call_id,
+                msg.tool_name
             ],
         )?;
         Ok(())
@@ -148,7 +153,7 @@ impl Db {
     pub fn load_messages(&self) -> Result<Vec<crate::llm::Message>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT role, text, is_tool_result, thinking, tool_result_content, tool_call_id FROM messages ORDER BY id ASC")?;
+            .prepare("SELECT role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name FROM messages ORDER BY id ASC")?;
 
         let messages = stmt.query_map([], |row| {
             Ok(crate::llm::Message {
@@ -158,6 +163,7 @@ impl Db {
                 thinking: row.get(3)?,
                 tool_result_content: row.get(4)?,
                 tool_call_id: row.get(5)?,
+                tool_name: row.get(6)?,
             })
         })?;
 
