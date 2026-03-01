@@ -6,7 +6,7 @@ use tempfile::NamedTempFile;
 #[test]
 fn test_get_tool_definitions() {
     let defs = get_tool_definitions();
-    assert_eq!(defs.len(), 3); // Read, Glob, Grep
+    assert_eq!(defs.len(), 7); // Read, Glob, Grep, Bash, Write, Edit, Webfetch
 
     // Check first tool is Read
     let tool = &defs[0];
@@ -55,7 +55,7 @@ fn test_execute_read_tool_success() {
     args.insert("filePath".to_string(), Value::String(path));
 
     let tool_call = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 
@@ -74,7 +74,7 @@ fn test_execute_read_tool_relative_path() {
     );
 
     let tool_call = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 
@@ -88,7 +88,7 @@ fn test_execute_read_tool_missing_filepath() {
     let args = serde_json::Map::new();
 
     let tool_call = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 
@@ -105,7 +105,7 @@ fn test_execute_read_tool_nonexistent_file() {
     );
 
     let tool_call = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 
@@ -127,7 +127,7 @@ fn test_execute_read_tool_large_file() {
     args.insert("filePath".to_string(), Value::String(path));
 
     let tool_call = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 
@@ -158,7 +158,7 @@ fn test_execute_read_tool_wrong_type_filepath() {
     args.insert("filePath".to_string(), Value::Number(123.into()));
 
     let tool_call = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 
@@ -172,7 +172,7 @@ fn test_tool_call_clone() {
     args.insert("test".to_string(), Value::String("value".to_string()));
 
     let tool = ToolCall {
-        name: "read".to_string(),
+        name: "Read".to_string(),
         args,
     };
 

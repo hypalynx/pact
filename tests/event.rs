@@ -198,6 +198,7 @@ fn test_handle_done_event_not_at_bottom_no_auto_scroll() {
             is_tool_result: false,
             thinking: None,
             tool_result_content: None,
+            tool_call_id: None,
         });
     }
 
@@ -278,7 +279,8 @@ fn test_active_llm_calls_counter_with_tool_calls() {
     handle_llm_event(
         &mut app,
         LlmEvent::ToolCall {
-            name: "read".to_string(),
+            id: "call_789".to_string(),
+            name: "Read".to_string(),
             args: serde_json::from_str(r#"{"filePath": "test.txt"}"#).unwrap(),
         },
     );
@@ -357,7 +359,8 @@ fn test_tool_call_preserves_thinking_content() {
     handle_llm_event(
         &mut app,
         LlmEvent::ToolCall {
-            name: "read".to_string(),
+            id: "call_123".to_string(),
+            name: "Read".to_string(),
             args: serde_json::from_str(r#"{"filePath": "Cargo.toml"}"#).unwrap(),
         },
     );
@@ -409,7 +412,8 @@ fn test_tool_call_without_pending_content() {
     handle_llm_event(
         &mut app,
         LlmEvent::ToolCall {
-            name: "read".to_string(),
+            id: "call_456".to_string(),
+            name: "Read".to_string(),
             args: serde_json::from_str(r#"{"filePath": "Cargo.toml"}"#).unwrap(),
         },
     );

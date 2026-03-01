@@ -53,6 +53,7 @@ fn test_save_and_load_message() {
         is_tool_result: false,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     db.save_message(&msg).expect("Failed to save message");
@@ -75,6 +76,7 @@ fn test_save_tool_result_message() {
         is_tool_result: true,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     db.save_message(&msg).expect("Failed to save message");
@@ -95,6 +97,7 @@ fn test_save_message_with_thinking() {
         is_tool_result: false,
         thinking: Some("Let me think...".to_string()),
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     db.save_message(&msg).expect("Failed to save message");
@@ -115,6 +118,7 @@ fn test_clear_messages() {
         is_tool_result: false,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     db.save_message(&msg).expect("Failed to save message");
@@ -205,6 +209,7 @@ fn test_load_messages_ordered() {
         is_tool_result: false,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     let msg2 = Message {
@@ -213,6 +218,7 @@ fn test_load_messages_ordered() {
         is_tool_result: false,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     db.save_message(&msg1).expect("Failed to save message");
@@ -319,6 +325,7 @@ fn test_multiple_messages_with_mixed_types() {
         is_tool_result: false,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     let tool_msg = Message {
@@ -327,6 +334,7 @@ fn test_multiple_messages_with_mixed_types() {
         is_tool_result: true,
         thinking: None,
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     let assistant_msg = Message {
@@ -335,6 +343,7 @@ fn test_multiple_messages_with_mixed_types() {
         is_tool_result: false,
         thinking: Some("Thinking...".to_string()),
         tool_result_content: None,
+        tool_call_id: None,
     };
 
     db.save_message(&user_msg).expect("Failed to save message");

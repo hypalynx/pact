@@ -47,7 +47,8 @@ impl Db {
                 role TEXT NOT NULL,
                 text TEXT NOT NULL,
                 is_tool_result INTEGER NOT NULL DEFAULT 0,
-                thinking TEXT
+                thinking TEXT,
+                tool_call_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS api_logs (
@@ -64,6 +65,12 @@ impl Db {
             );
             "#,
         )?;
+
+        // Migrate existing tables if needed (add tool_call_id column if it doesn't exist)
+        let _ = self.conn.execute(
+            "ALTER TABLE messages ADD COLUMN tool_call_id TEXT",
+            [],
+        );
 
         // Run PRAGMA optimize to analyze tables if they have any data
         self.conn.execute_batch("PRAGMA optimize;")?;
@@ -144,6 +151,7 @@ impl Db {
                 is_tool_result: row.get::<_, i64>(2)? != 0,
                 thinking: row.get(3)?,
                 tool_result_content: None,
+                tool_call_id: None,
             })
         })?;
 

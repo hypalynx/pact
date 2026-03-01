@@ -74,6 +74,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 is_tool_result: false,
                 thinking,
                 tool_result_content: None,
+                tool_call_id: None,
             };
             app.messages.push(msg.clone());
             if let Some(db) = &app.db {
@@ -104,6 +105,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 is_tool_result: false,
                 thinking: None,
                 tool_result_content: None,
+                tool_call_id: None,
             });
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
 
@@ -120,7 +122,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.total_input_tokens += input_tokens;
             app.total_output_tokens += output_tokens;
         }
-        LlmEvent::ToolCall { name, args } => {
+        LlmEvent::ToolCall { id, name, args } => {
             // First, save any pending thinking/response as an assistant message
             // This preserves the LLM's thought process before the tool call
             // Trim trailing newlines to avoid gaps where the <tool_call> was stripped
@@ -142,6 +144,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     is_tool_result: false,
                     thinking,
                     tool_result_content: None,
+                    tool_call_id: None,
                 };
                 app.messages.push(msg.clone());
                 if let Some(db) = &app.db {
@@ -158,6 +161,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 is_tool_result: true,
                 thinking: None,
                 tool_result_content: Some(content),
+                tool_call_id: Some(id),
             });
             app.send_to_llm();
         }

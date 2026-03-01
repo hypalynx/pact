@@ -55,6 +55,7 @@ fn add_test_messages(app: &mut App, count: usize) {
             is_tool_result: false,
             thinking: None,
             tool_result_content: None,
+            tool_call_id: None,
         };
         app.messages.push(msg);
     }

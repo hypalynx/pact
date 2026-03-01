@@ -70,6 +70,94 @@ pub fn get_tool_definitions() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Bash",
+                "description": "Execute a shell command and return output. The description field should briefly describe what the command does.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "description": "Shell command to execute"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Brief description of what this command does (for the UI summary)"
+                        }
+                    },
+                    "required": ["command", "description"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Write",
+                "description": "Write or create a file with the given content. Creates parent directories if needed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to the file to write (absolute or relative)"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The complete content to write to the file"
+                        }
+                    },
+                    "required": ["path", "content"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Edit",
+                "description": "Find and replace text in an existing file. Finds old_string and replaces with new_string.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to the file to edit"
+                        },
+                        "old_string": {
+                            "type": "string",
+                            "description": "Exact text to find and replace"
+                        },
+                        "new_string": {
+                            "type": "string",
+                            "description": "Replacement text"
+                        }
+                    },
+                    "required": ["path", "old_string", "new_string"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "Webfetch",
+                "description": "Fetch content from a URL via HTTP GET request. Returns text content with HTML tags stripped.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch (e.g., https://example.com/page)"
+                        }
+                    },
+                    "required": ["url"],
+                    "additionalProperties": false
+                }
+            }
+        }),
     ]
 }
 
@@ -78,8 +166,17 @@ pub fn execute_tool(tool_call: &ToolCall) -> (String, String) {
         "Read" => execute_read(&tool_call.args),
         "Glob" => execute_glob(&tool_call.args),
         "Grep" => execute_grep(&tool_call.args),
-        // Support legacy lowercase "read" for backwards compatibility
-        "read" => execute_read(&tool_call.args),
+        "Bash" => execute_bash(&tool_call.args),
+        "Write" => execute_write(&tool_call.args),
+        "Edit" => execute_edit(&tool_call.args),
+        "Webfetch" => execute_webfetch(&tool_call.args),
+        // Support lowercase variants for backwards compatibility
+        "bash" => execute_bash(&tool_call.args),
+        "write" => execute_write(&tool_call.args),
+        "edit" => execute_edit(&tool_call.args),
+        "webfetch" => execute_webfetch(&tool_call.args),
+        "glob" => execute_glob(&tool_call.args),
+        "grep" => execute_grep(&tool_call.args),
         _ => {
             let error = format!("Unknown tool: {}", tool_call.name);
             (error.clone(), error)
@@ -262,4 +359,314 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
         let summary = format!("Found {} matches in {} files", match_count, file_count);
         (summary, content)
     }
+}
+
+fn execute_bash(args: &serde_json::Map<String, Value>) -> (String, String) {
+    const MAX_OUTPUT: usize = 65536; // 64KB
+
+    let command = match args.get("command").and_then(|v| v.as_str()) {
+        Some(c) => c,
+        None => {
+            let error = "Error: 'command' parameter is required and must be a string".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    let description = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or(command);
+
+    // Validate command for dangerous operations
+    match validate_bash_command(command) {
+        ValidationResult::HardBlocked(reason) => {
+            let error = format!("Command blocked for safety: {}", reason);
+            return (error.clone(), error);
+        }
+        ValidationResult::SoftBlocked(reason) => {
+            let warning = format!("⚠️  WARNING: This command is potentially dangerous: {}. Confirm execution to proceed.", reason);
+            return (warning.clone(), warning);
+        }
+        ValidationResult::Safe => {}
+    }
+
+    // Execute command with timeout
+    match std::process::Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .output()
+    {
+        Ok(output) => {
+            let mut result = String::new();
+            result.push_str(&String::from_utf8_lossy(&output.stdout));
+            if !output.stderr.is_empty() {
+                result.push_str(&String::from_utf8_lossy(&output.stderr));
+            }
+
+            // Truncate if too large
+            if result.len() > MAX_OUTPUT {
+                result.truncate(MAX_OUTPUT);
+                result.push_str("\n[Output truncated at 64KB]");
+            }
+
+            (description.to_string(), result)
+        }
+        Err(e) => {
+            let error = format!("Failed to execute command: {}", e);
+            (error.clone(), error)
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ValidationResult {
+    Safe,
+    HardBlocked(String),
+    SoftBlocked(String),
+}
+
+fn validate_bash_command(command: &str) -> ValidationResult {
+    let cmd_lower = command.to_lowercase();
+
+    // Hard blocklist - always reject these
+    let hard_blocks = [
+        ("dd", "disk write operations (data destruction risk)"),
+        ("mkfs", "filesystem formatting (irreversible)"),
+        ("reboot", "system reboot (would interrupt session)"),
+        ("shutdown", "system shutdown (would interrupt session)"),
+    ];
+
+    for (pattern, reason) in &hard_blocks {
+        if is_command_match(&cmd_lower, pattern) {
+            return ValidationResult::HardBlocked(reason.to_string());
+        }
+    }
+
+    // Soft blocklist - warn and require confirmation
+    let soft_blocks = [
+        ("rm ", "file deletion (rm) - data loss risk"),
+        ("rm\t", "file deletion (rm) - data loss risk"),
+        ("mv ", "file move/rename - could overwrite data"),
+        ("truncate", "file truncation (destructive)"),
+        ("git push --force", "force git push (overwrites history)"),
+        ("git push -f", "force git push (overwrites history)"),
+        (" | bash", "pipe to bash (code injection risk)"),
+        (" | sh", "pipe to shell (code injection risk)"),
+    ];
+
+    for (pattern, reason) in &soft_blocks {
+        if is_command_match(&cmd_lower, pattern) {
+            return ValidationResult::SoftBlocked(reason.to_string());
+        }
+    }
+
+    ValidationResult::Safe
+}
+
+fn is_command_match(command: &str, pattern: &str) -> bool {
+    // Check if pattern appears as a command (beginning of string or after operators)
+    if command.starts_with(pattern) {
+        return true;
+    }
+
+    // Also check after common command separators
+    for sep in &[" && ", " ; ", " | ", "\n", "\t"] {
+        if command.contains(&format!("{}{}", sep, pattern)) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn execute_write(args: &serde_json::Map<String, Value>) -> (String, String) {
+    let path = match args.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            let error = "Error: 'path' parameter is required".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    let content = match args.get("content").and_then(|v| v.as_str()) {
+        Some(c) => c,
+        None => {
+            let error = "Error: 'content' parameter is required".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    // Create parent directories if needed
+    let file_path = Path::new(path);
+    if let Some(parent) = file_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                let error = format!("Error creating directories: {}", e);
+                return (error.clone(), error);
+            }
+        }
+    }
+
+    // Write file
+    match fs::write(path, content) {
+        Ok(_) => {
+            let filename = file_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
+            let summary = format!("Writing {}", filename);
+            let result = format!("Written {} bytes to {}", content.len(), path);
+            (summary, result)
+        }
+        Err(e) => {
+            let error = format!("Error writing file: {}", e);
+            (error.clone(), error)
+        }
+    }
+}
+
+fn execute_edit(args: &serde_json::Map<String, Value>) -> (String, String) {
+    let path = match args.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => {
+            let error = "Error: 'path' parameter is required".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    let old_string = match args.get("old_string").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            let error = "Error: 'old_string' parameter is required".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    let new_string = match args.get("new_string").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => {
+            let error = "Error: 'new_string' parameter is required".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    // Read file
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            let error = format!("Error reading file: {}", e);
+            return (error.clone(), error);
+        }
+    };
+
+    // Find and replace
+    if !content.contains(old_string) {
+        let error = "Error: old_string not found in file".to_string();
+        return (error.clone(), error);
+    }
+
+    let count = content.matches(old_string).count();
+    if count > 1 {
+        let error = format!("Error: old_string appears {} times (must be unique)", count);
+        return (error.clone(), error);
+    }
+
+    let new_content = content.replacen(old_string, new_string, 1);
+
+    // Write back
+    match fs::write(path, new_content) {
+        Ok(_) => {
+            let filename = Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(path);
+            let summary = format!("Editing {}", filename);
+            let result = format!("Successfully edited {}", path);
+            (summary, result)
+        }
+        Err(e) => {
+            let error = format!("Error writing file: {}", e);
+            (error.clone(), error)
+        }
+    }
+}
+
+fn execute_webfetch(args: &serde_json::Map<String, Value>) -> (String, String) {
+    const MAX_CONTENT: usize = 32768; // 32KB
+
+    let url = match args.get("url").and_then(|v| v.as_str()) {
+        Some(u) => u,
+        None => {
+            let error = "Error: 'url' parameter is required".to_string();
+            return (error.clone(), error);
+        }
+    };
+
+    // Extract domain for summary
+    let domain = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .unwrap_or(url);
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            let error = format!("Failed to create HTTP client: {}", e);
+            return (error.clone(), error);
+        }
+    };
+
+    match client.get(url).send() {
+        Ok(response) => match response.text() {
+            Ok(content) => {
+                // Strip HTML tags
+                let text = strip_html_tags(&content);
+
+                // Truncate if needed
+                let result = if text.len() > MAX_CONTENT {
+                    format!(
+                        "{}\n[Content truncated at 32KB]",
+                        &text[..MAX_CONTENT]
+                    )
+                } else {
+                    text
+                };
+
+                let summary = format!("Fetching {}", domain);
+                (summary, result)
+            }
+            Err(e) => {
+                let error = format!("Error reading response: {}", e);
+                (error.clone(), error)
+            }
+        },
+        Err(e) => {
+            let error = format!("HTTP request failed: {}", e);
+            (error.clone(), error)
+        }
+    }
+}
+
+fn strip_html_tags(html: &str) -> String {
+    // Simple HTML tag stripping - remove anything between < and >
+    let mut result = String::new();
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+
+    // Clean up excessive whitespace
+    let lines: Vec<&str> = result.lines().filter(|l| !l.trim().is_empty()).collect();
+    lines.join("\n")
 }
