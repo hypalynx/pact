@@ -102,6 +102,12 @@ pub fn call_llm(
 
     // Add conversation messages
     for m in messages {
+        // Skip empty non-tool messages - they confuse the model and cause looping
+        // (tool messages may legitimately be empty)
+        if !m.is_tool_result && m.text.trim().is_empty() {
+            continue;
+        }
+
         let msg = if m.is_tool_result {
             // Tool results: use proper OpenAI format with tool_call_id
             let tool_output = m.tool_result_content.as_deref().unwrap_or(&m.text);

@@ -74,6 +74,7 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<String>, depth: usize) {
 }
 
 const DEFAULT_MAX_TOKENS: usize = 1024;
+const SCROLL_STEP: usize = 8;
 
 pub struct App {
     pub db: Option<Db>,
@@ -433,14 +434,14 @@ impl App {
     }
 
     pub fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(3);
+        self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_STEP);
         self.user_scrolled = true;
     }
 
     pub fn scroll_down(&mut self) {
         let total_lines = self.calculate_total_lines();
         let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
-        self.scroll_offset = (self.scroll_offset + 3).min(max_scroll);
+        self.scroll_offset = (self.scroll_offset + SCROLL_STEP).min(max_scroll);
         if self.scroll_offset >= max_scroll {
             self.user_scrolled = false;
         }
