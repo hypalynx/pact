@@ -23,18 +23,20 @@ pub struct Message {
 }
 
 pub enum LlmEvent {
-    Token(String),
-    Thinking(String),
-    Done,
-    Error(String),
+    Token(String, u64),  // (text, call_id)
+    Thinking(String, u64),  // (text, call_id)
+    Done(u64),  // call_id
+    Error(String, u64),  // (msg, call_id)
     Usage {
         input_tokens: usize,
         output_tokens: usize,
+        call_id: u64,
     },
     ToolCall {
         id: String,
         name: String,
         args: serde_json::Map<String, serde_json::Value>,
+        call_id: u64,
     },
     ApiLog {
         request_body: String,
@@ -44,10 +46,12 @@ pub enum LlmEvent {
         error_message: Option<String>,
         model_name: Option<String>,
         provider: Option<String>,
+        call_id: u64,
     },
     ServerInfo {
         model_name: String,
         context_window: usize,
+        call_id: u64,
     },
 }
 
@@ -64,6 +68,7 @@ pub fn call_llm(
     model_id: String,
     provider_name: Option<String>,
     cancel_flag: Arc<AtomicBool>,
+    call_id: u64,
 ) {
     let start_time = Instant::now();
 
@@ -74,7 +79,7 @@ pub fn call_llm(
         Ok(c) => c,
         Err(e) => {
             let err_msg = format!("Failed to create client: {}", e);
-            let _ = tx.send(LlmEvent::Error(err_msg.clone()));
+            let _ = tx.send(LlmEvent::Error(err_msg.clone(), call_id));
             if debug {
                 let _ = tx.send(LlmEvent::ApiLog {
                     request_body: String::new(),
@@ -84,6 +89,7 @@ pub fn call_llm(
                     error_message: Some(err_msg),
                     model_name: Some(model_id.clone()),
                     provider: provider_name.clone(),
+                    call_id,
                 });
             }
             return;
@@ -163,7 +169,7 @@ pub fn call_llm(
         Ok(r) => r,
         Err(e) => {
             let err_msg = format!("Request failed: {}", e);
-            let _ = tx.send(LlmEvent::Error(err_msg.clone()));
+            let _ = tx.send(LlmEvent::Error(err_msg.clone(), call_id));
             if debug {
                 let _ = tx.send(LlmEvent::ApiLog {
                     request_body,
@@ -173,6 +179,7 @@ pub fn call_llm(
                     error_message: Some(err_msg),
                     model_name: Some(model_id.clone()),
                     provider: provider_name.clone(),
+                    call_id,
                 });
             }
             return;
@@ -188,7 +195,7 @@ pub fn call_llm(
             status,
             &err_body[..err_body.len().min(200)]
         );
-        let _ = tx.send(LlmEvent::Error(err_msg.clone()));
+        let _ = tx.send(LlmEvent::Error(err_msg.clone(), call_id));
         if debug {
             let _ = tx.send(LlmEvent::ApiLog {
                 request_body,
@@ -198,6 +205,7 @@ pub fn call_llm(
                 error_message: Some(err_msg),
                 model_name: Some(model_id.clone()),
                 provider: provider_name.clone(),
+                call_id,
             });
         }
         return;
@@ -225,7 +233,7 @@ pub fn call_llm(
         // Check if cancelled - exit early
         if cancel_flag.load(Ordering::SeqCst) {
             // Send Done to signal clean exit
-            let _ = tx.send(LlmEvent::Done);
+            let _ = tx.send(LlmEvent::Done(call_id));
             return;
         }
 
@@ -293,7 +301,7 @@ pub fn call_llm(
                             }
 
                             if !name.is_empty() && !args.is_empty() {
-                                let _ = tx.send(LlmEvent::ToolCall { id, name, args });
+                                let _ = tx.send(LlmEvent::ToolCall { id, name, args, call_id });
                             }
                         }
                     }
@@ -301,7 +309,7 @@ pub fn call_llm(
                 } else {
                     // Regular text token
                     accumulated_text.push_str(delta);
-                    let _ = tx.send(LlmEvent::Token(delta.to_string()));
+                    let _ = tx.send(LlmEvent::Token(delta.to_string(), call_id));
                 }
             }
 
@@ -311,7 +319,7 @@ pub fn call_llm(
                 .and_then(|t| t.as_str())
             {
                 accumulated_thinking.push_str(thinking);
-                let _ = tx.send(LlmEvent::Thinking(thinking.to_string()));
+                let _ = tx.send(LlmEvent::Thinking(thinking.to_string(), call_id));
             }
 
             // Check for tool calls in delta
@@ -361,6 +369,7 @@ pub fn call_llm(
                                     id: partial.id.clone(),
                                     name: partial.name.clone(),
                                     args: args_obj.clone(),
+                                    call_id,
                                 });
                                 // Clear the partial to avoid re-emitting
                                 partial_tool_call = None;
@@ -386,6 +395,7 @@ pub fn call_llm(
                     let _ = tx.send(LlmEvent::Usage {
                         input_tokens,
                         output_tokens,
+                        call_id,
                     });
                 }
             }
@@ -441,8 +451,9 @@ pub fn call_llm(
             error_message: None,
             model_name: Some(model_id),
             provider: provider_name,
+            call_id,
         });
     }
 
-    let _ = tx.send(LlmEvent::Done);
+    let _ = tx.send(LlmEvent::Done(call_id));
 }

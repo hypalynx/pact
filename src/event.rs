@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 /// Handle incoming LLM events (tokens, done, errors, etc.)
 pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
     match event {
-        LlmEvent::Token(t) => {
+        LlmEvent::Token(t, _call_id) => {
             // Check if at bottom BEFORE adding content
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();
@@ -33,7 +33,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
         }
-        LlmEvent::Thinking(t) => {
+        LlmEvent::Thinking(t, _call_id) => {
             // Check if at bottom BEFORE adding content
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();
@@ -52,7 +52,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
         }
-        LlmEvent::Done => {
+        LlmEvent::Done(_call_id) => {
             // Check if at bottom BEFORE adding message
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();
@@ -82,14 +82,20 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 let _ = db.save_message(&msg);
             }
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
+            app.active_call_id = None;
 
             // Auto-scroll to bottom if we were at bottom before message added
             if was_at_bottom {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
+
+            // Queue mode: if user tried to send while we were busy, send now
+            if app.pending_send {
+                app.send_to_llm();
+            }
         }
-        LlmEvent::Error(e) => {
+        LlmEvent::Error(e, _call_id) => {
             // Check if at bottom BEFORE adding message
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();
@@ -110,6 +116,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 tool_name: None,
             });
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
+            app.active_call_id = None;
 
             // Show error in status bar for 5 seconds (300 frames at 60fps)
             app.error_message = Some(format!("Error: {}", &e[..e.len().min(50)]));
@@ -120,15 +127,21 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
+
+            // Queue mode: if user tried to send while we were busy, send now
+            if app.pending_send {
+                app.send_to_llm();
+            }
         }
         LlmEvent::Usage {
             input_tokens,
             output_tokens,
+            call_id: _,
         } => {
             app.total_input_tokens += input_tokens;
             app.total_output_tokens += output_tokens;
         }
-        LlmEvent::ToolCall { id, name, args } => {
+        LlmEvent::ToolCall { id, name, args, call_id: _ } => {
             // Check if at bottom BEFORE adding content
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();
@@ -205,6 +218,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             error_message,
             model_name,
             provider,
+            call_id: _,
         } =>
         {
             #[allow(clippy::collapsible_if)]
@@ -225,6 +239,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
         LlmEvent::ServerInfo {
             model_name,
             context_window,
+            call_id: _,
         } => {
             app.model_name = model_name;
             app.context_window = context_window;

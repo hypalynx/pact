@@ -54,7 +54,7 @@ fn test_handle_token_event_at_bottom_auto_scrolls() {
     assert!(was_at_bottom);
 
     // Send a token event
-    handle_llm_event(&mut app, LlmEvent::Token("new text ".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Token("new text ".to_string(), 1));
 
     // Should have updated content
     assert!(app.pending_response.contains("new text"));
@@ -96,7 +96,7 @@ fn test_handle_token_event_not_at_bottom_no_auto_scroll() {
     assert!(!still_at_bottom);
 
     // Send a token event
-    handle_llm_event(&mut app, LlmEvent::Token("new text ".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Token("new text ".to_string(), 1));
 
     // When not at bottom, scroll position should not change (don't auto-scroll)
     assert_eq!(app.scroll_offset, saved_offset);
@@ -111,7 +111,7 @@ fn test_handle_token_event_startup_unsized_viewport_auto_scrolls() {
     assert_eq!(app.scroll_offset, 0);
 
     // Send first token
-    handle_llm_event(&mut app, LlmEvent::Token("first ".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Token("first ".to_string(), 1));
     assert_eq!(app.pending_response, "first ");
 
     // Size the viewport
@@ -127,7 +127,7 @@ fn test_handle_token_event_startup_unsized_viewport_auto_scrolls() {
     assert!(at_bottom);
 
     // More tokens should keep us at bottom
-    handle_llm_event(&mut app, LlmEvent::Token("second ".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Token("second ".to_string(), 1));
     let (still_at_bottom, _) = app.calculate_scroll_info();
     assert!(still_at_bottom);
 }
@@ -142,7 +142,7 @@ fn test_handle_thinking_event() {
         height: 10,
     };
 
-    handle_llm_event(&mut app, LlmEvent::Thinking("thinking...".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Thinking("thinking...".to_string(), 1));
 
     assert_eq!(app.pending_thinking, "thinking...");
 }
@@ -155,7 +155,7 @@ fn test_handle_done_event_creates_message() {
 
     let initial_count = app.messages.len();
 
-    handle_llm_event(&mut app, LlmEvent::Done);
+    handle_llm_event(&mut app, LlmEvent::Done(1));
 
     // Message should be added
     assert_eq!(app.messages.len(), initial_count + 1);
@@ -213,7 +213,7 @@ fn test_handle_done_event_not_at_bottom_no_auto_scroll() {
 
     // Send a Done event with a multi-line message
     app.pending_response = "New assistant response\nLine 2\nLine 3".to_string();
-    handle_llm_event(&mut app, LlmEvent::Done);
+    handle_llm_event(&mut app, LlmEvent::Done(1));
 
     // When not at bottom, scroll position should not change (don't auto-scroll to new bottom)
     assert_eq!(app.scroll_offset, saved_offset);
@@ -224,7 +224,7 @@ fn test_handle_error_event() {
     let mut app = create_test_app();
     let initial_count = app.messages.len();
 
-    handle_llm_event(&mut app, LlmEvent::Error("API error occurred".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Error("API error occurred".to_string(), 1));
 
     // Error message should be added
     assert_eq!(app.messages.len(), initial_count + 1);
@@ -247,6 +247,7 @@ fn test_handle_usage_event_accumulates_tokens() {
         LlmEvent::Usage {
             input_tokens: 10,
             output_tokens: 20,
+            call_id: 1,
         },
     );
 
@@ -275,18 +276,21 @@ fn test_active_llm_calls_counter_with_tool_calls() {
             id: "call_789".to_string(),
             name: "Read".to_string(),
             args: serde_json::from_str(r#"{"filePath": "test.txt"}"#).unwrap(),
+            call_id: 1,
         },
     );
 
-    // Tool result message added, and send_to_llm() called → counter now 2
-    assert_eq!(app.active_llm_calls, 2);
+    // Tool result message added; send_to_llm() is queued due to queue mode
+    // (active_llm_calls still 1, pending_send will be true)
+    assert_eq!(app.active_llm_calls, 1);
+    assert!(app.pending_send, "Next send should be queued");
     assert!(
         app.messages.last().unwrap().is_tool_result,
         "Tool result should be added"
     );
 
     // First API call finishes (sends Done)
-    handle_llm_event(&mut app, LlmEvent::Done);
+    handle_llm_event(&mut app, LlmEvent::Done(1));
 
     // Counter should decrement but NOT reach 0 (second call still in progress)
     assert_eq!(
@@ -294,9 +298,9 @@ fn test_active_llm_calls_counter_with_tool_calls() {
         "Loading should persist while second call is active"
     );
 
-    // Second API call finishes
+    // Second API call finishes (the queued call has call_id = 2)
     app.pending_response = "Here's the file content...".to_string();
-    handle_llm_event(&mut app, LlmEvent::Done);
+    handle_llm_event(&mut app, LlmEvent::Done(2));
 
     // Now counter reaches 0
     assert_eq!(
@@ -319,13 +323,13 @@ fn test_active_llm_calls_counter_error_resets_properly() {
     app.active_llm_calls = 2;
 
     // First call errors out
-    handle_llm_event(&mut app, LlmEvent::Error("Network timeout".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Error("Network timeout".to_string(), 1));
 
     // Counter decrements but still loading
     assert_eq!(app.active_llm_calls, 1);
 
     // Second call errors
-    handle_llm_event(&mut app, LlmEvent::Error("Connection refused".to_string()));
+    handle_llm_event(&mut app, LlmEvent::Error("Connection refused".to_string(), 1));
 
     // Now counter reaches 0
     assert_eq!(app.active_llm_calls, 0);
@@ -355,6 +359,7 @@ fn test_tool_call_preserves_thinking_content() {
             id: "call_123".to_string(),
             name: "Read".to_string(),
             args: serde_json::from_str(r#"{"filePath": "Cargo.toml"}"#).unwrap(),
+            call_id: 1,
         },
     );
 
@@ -381,8 +386,9 @@ fn test_tool_call_preserves_thinking_content() {
     assert!(app.pending_response.is_empty());
     assert!(app.pending_thinking.is_empty());
 
-    // A new LLM call should have started
-    assert_eq!(app.active_llm_calls, 2);
+    // With queue mode, new call is queued, not started yet
+    assert_eq!(app.active_llm_calls, 1);
+    assert!(app.pending_send, "Next send should be queued");
 }
 
 #[test]
@@ -408,6 +414,7 @@ fn test_tool_call_without_pending_content() {
             id: "call_456".to_string(),
             name: "Read".to_string(),
             args: serde_json::from_str(r#"{"filePath": "Cargo.toml"}"#).unwrap(),
+            call_id: 1,
         },
     );
 

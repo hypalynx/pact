@@ -139,6 +139,11 @@ pub struct App {
 
     // API key input mode
     pub api_key_input: Option<String>, // When Some, we're in API key input mode
+
+    // Call tracking for queue mode
+    pub call_counter: u64,
+    pub active_call_id: Option<u64>,
+    pub pending_send: bool,
 }
 
 impl App {
@@ -216,6 +221,9 @@ impl App {
             active_provider: None,
             slash_picker: None,
             api_key_input: None,
+            call_counter: 0,
+            active_call_id: None,
+            pending_send: false,
         }
     }
 
@@ -299,10 +307,22 @@ impl App {
     }
 
     pub fn send_to_llm(&mut self) {
+        // Queue mode: reject if call already active
+        if self.active_llm_calls > 0 {
+            self.pending_send = true;
+            return;
+        }
+
+        self.pending_send = false;
         self.active_llm_calls += 1;
         self.pending_response.clear();
         self.pending_thinking.clear();
         self.user_scrolled = false;
+
+        // Generate call ID
+        let call_id = self.call_counter;
+        self.call_counter += 1;
+        self.active_call_id = Some(call_id);
 
         // Reset cancellation flag for new call
         self.cancel_flag.store(false, Ordering::SeqCst);
@@ -351,6 +371,7 @@ impl App {
                 model_id,
                 provider_name,
                 cancel_flag,
+                call_id,
             );
         });
     }
@@ -613,6 +634,7 @@ impl App {
                 let _ = tx.send(LlmEvent::ServerInfo {
                     model_name: server_info.model_name,
                     context_window: server_info.context_window,
+                    call_id: 0,  // Background server check, not part of a call
                 });
             });
         }
