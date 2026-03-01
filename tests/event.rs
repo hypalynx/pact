@@ -224,7 +224,10 @@ fn test_handle_error_event() {
     let mut app = create_test_app();
     let initial_count = app.messages.len();
 
-    handle_llm_event(&mut app, LlmEvent::Error("API error occurred".to_string(), 1));
+    handle_llm_event(
+        &mut app,
+        LlmEvent::Error("API error occurred".to_string(), 1),
+    );
 
     // Error message should be added
     assert_eq!(app.messages.len(), initial_count + 1);
@@ -329,7 +332,10 @@ fn test_active_llm_calls_counter_error_resets_properly() {
     assert_eq!(app.active_llm_calls, 1);
 
     // Second call errors
-    handle_llm_event(&mut app, LlmEvent::Error("Connection refused".to_string(), 1));
+    handle_llm_event(
+        &mut app,
+        LlmEvent::Error("Connection refused".to_string(), 1),
+    );
 
     // Now counter reaches 0
     assert_eq!(app.active_llm_calls, 0);

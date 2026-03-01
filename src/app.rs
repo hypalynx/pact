@@ -634,7 +634,7 @@ impl App {
                 let _ = tx.send(LlmEvent::ServerInfo {
                     model_name: server_info.model_name,
                     context_window: server_info.context_window,
-                    call_id: 0,  // Background server check, not part of a call
+                    call_id: 0, // Background server check, not part of a call
                 });
             });
         }

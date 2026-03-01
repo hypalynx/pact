@@ -141,7 +141,12 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.total_input_tokens += input_tokens;
             app.total_output_tokens += output_tokens;
         }
-        LlmEvent::ToolCall { id, name, args, call_id: _ } => {
+        LlmEvent::ToolCall {
+            id,
+            name,
+            args,
+            call_id: _,
+        } => {
             // Check if at bottom BEFORE adding content
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();

@@ -23,10 +23,10 @@ pub struct Message {
 }
 
 pub enum LlmEvent {
-    Token(String, u64),  // (text, call_id)
-    Thinking(String, u64),  // (text, call_id)
-    Done(u64),  // call_id
-    Error(String, u64),  // (msg, call_id)
+    Token(String, u64),    // (text, call_id)
+    Thinking(String, u64), // (text, call_id)
+    Done(u64),             // call_id
+    Error(String, u64),    // (msg, call_id)
     Usage {
         input_tokens: usize,
         output_tokens: usize,
@@ -301,7 +301,12 @@ pub fn call_llm(
                             }
 
                             if !name.is_empty() && !args.is_empty() {
-                                let _ = tx.send(LlmEvent::ToolCall { id, name, args, call_id });
+                                let _ = tx.send(LlmEvent::ToolCall {
+                                    id,
+                                    name,
+                                    args,
+                                    call_id,
+                                });
                             }
                         }
                     }
