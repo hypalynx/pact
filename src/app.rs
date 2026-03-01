@@ -312,7 +312,11 @@ impl App {
                 // User messages have top and bottom padding lines
                 total_lines += 1; // top padding
                 if msg.is_tool_result {
-                    total_lines += 1; // tool result line
+                    total_lines += 1; // tool result summary line
+                    // Add lines from tool result content (diff, output, etc.)
+                    if let Some(content) = &msg.tool_result_content {
+                        total_lines += content.lines().count();
+                    }
                 } else {
                     let wrapped = wrap_text(&msg.text, available_width);
                     total_lines += wrapped.len();

@@ -9,6 +9,23 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
+// Input box layout constants
+const INPUT_MIN_HEIGHT: u16 = 3;
+const INPUT_MAX_HEIGHT: u16 = 10;
+const INPUT_HORIZONTAL_MARGIN: u16 = 3;
+const INPUT_VERTICAL_MARGIN: u16 = 1;
+
+// Control panel constants
+const CONTROL_PANEL_WIDTH: u16 = 40;
+const CONTROL_PANEL_HEIGHT: u16 = 8;
+
+// Debug modal constants
+const DEBUG_MODAL_WIDTH_PERCENT: u16 = 9; // out of 10
+const DEBUG_MODAL_HEIGHT_PERCENT: u16 = 8; // out of 10
+const DEBUG_MODAL_MIN_WIDTH: u16 = 40;
+const DEBUG_MODAL_MIN_HEIGHT: u16 = 10;
+const DEBUG_FILE_PICKER_MAX_VISIBLE: usize = 8;
+
 fn parse_color(color_str: &str) -> Color {
     match color_str.to_lowercase().as_str() {
         "black" => Color::Black,
@@ -65,9 +82,10 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     let margin = ratatui::layout::Margin::new(1, 1);
     let area = frame.area().inner(margin);
 
-    let input_lines =
-        (app.input.lines().count() + if app.input.ends_with('\n') { 1 } else { 0 }).max(1) as u16;
-    let input_height = (input_lines + 2).clamp(3, 10);
+    // Calculate input height based on wrapped lines, not just actual newlines
+    let available_input_width = (area.width.saturating_sub(INPUT_HORIZONTAL_MARGIN * 2)) as usize;
+    let wrapped_lines = wrap_text(&app.input, available_input_width);
+    let input_height = ((wrapped_lines.len() + 2) as u16).clamp(INPUT_MIN_HEIGHT, INPUT_MAX_HEIGHT);
 
     let vertical = Layout::vertical([
         Constraint::Min(3),
@@ -348,14 +366,22 @@ fn draw_input(app: &App, frame: &mut Frame) {
     frame.render_widget(margin, app.input_rect);
 
     let inner = app.input_rect.inner(ratatui::layout::Margin {
-        horizontal: 3,
-        vertical: 1,
+        horizontal: INPUT_HORIZONTAL_MARGIN,
+        vertical: INPUT_VERTICAL_MARGIN,
     });
 
-    // Parse input to colorize file picker references
-    let spans = colorize_input(&app.input);
-    let input_line = Line::from(spans);
-    let input = Paragraph::new(input_line).style(Style::default().bg(Color::Black));
+    let available_width = (inner.width.saturating_sub(1)) as usize;
+
+    // Wrap the input text to available width
+    let wrapped_lines = wrap_text(&app.input, available_width);
+
+    let mut lines: Vec<Line> = Vec::new();
+    for line_text in wrapped_lines {
+        let spans = colorize_input(&line_text);
+        lines.push(Line::from(spans));
+    }
+
+    let input = Paragraph::new(lines).style(Style::default().bg(Color::Black));
     frame.render_widget(input, inner);
 
     if app.active_llm_calls == 0 {
@@ -441,17 +467,14 @@ fn cursor_position(input: &str, cursor_pos: usize) -> (usize, usize) {
 
 fn draw_control_panel(_app: &App, frame: &mut Frame) {
     let frame_area = frame.area();
-    let modal_width = 40;
-    let modal_height = 8;
-
-    let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
-    let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
+    let modal_x = (frame_area.width.saturating_sub(CONTROL_PANEL_WIDTH)) / 2;
+    let modal_y = (frame_area.height.saturating_sub(CONTROL_PANEL_HEIGHT)) / 2;
 
     let modal_area = Rect {
         x: modal_x,
         y: modal_y,
-        width: modal_width,
-        height: modal_height,
+        width: CONTROL_PANEL_WIDTH,
+        height: CONTROL_PANEL_HEIGHT,
     };
 
     let block = Block::default()
@@ -578,7 +601,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
 
 fn draw_file_picker(app: &App, frame: &mut Frame) {
     if let Some(picker) = &app.file_picker {
-        let max_visible = 8;
+        let max_visible = DEBUG_FILE_PICKER_MAX_VISIBLE;
         let height = (picker.filtered.len().min(max_visible) + 2).max(3) as u16;
 
         // Position: top edge of input_rect, same horizontal position
@@ -639,8 +662,8 @@ fn draw_file_picker(app: &App, frame: &mut Frame) {
 
 fn draw_debug_modal(app: &App, frame: &mut Frame) {
     let frame_area = frame.area();
-    let modal_width = (frame_area.width * 9 / 10).max(40);
-    let modal_height = (frame_area.height * 8 / 10).max(10);
+    let modal_width = (frame_area.width * DEBUG_MODAL_WIDTH_PERCENT / 10).max(DEBUG_MODAL_MIN_WIDTH);
+    let modal_height = (frame_area.height * DEBUG_MODAL_HEIGHT_PERCENT / 10).max(DEBUG_MODAL_MIN_HEIGHT);
 
     let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
     let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
