@@ -4,7 +4,7 @@ use crate::text::wrap_text;
 use indexmap::IndexMap;
 use ratatui::layout::Rect;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PanelState {

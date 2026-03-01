@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use similar::{ChangeTag, TextDiff};
 use std::fs;
 use std::path::Path;
 
@@ -384,7 +385,10 @@ fn execute_bash(args: &serde_json::Map<String, Value>) -> (String, String) {
             return (error.clone(), error);
         }
         ValidationResult::SoftBlocked(reason) => {
-            let warning = format!("⚠️  WARNING: This command is potentially dangerous: {}. Confirm execution to proceed.", reason);
+            let warning = format!(
+                "⚠️  WARNING: This command is potentially dangerous: {}. Confirm execution to proceed.",
+                reason
+            );
             return (warning.clone(), warning);
         }
         ValidationResult::Safe => {}
@@ -498,14 +502,16 @@ fn execute_write(args: &serde_json::Map<String, Value>) -> (String, String) {
 
     // Create parent directories if needed
     let file_path = Path::new(path);
-    if let Some(parent) = file_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                let error = format!("Error creating directories: {}", e);
-                return (error.clone(), error);
-            }
-        }
+    if let Some(parent) = file_path.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = fs::create_dir_all(parent)
+    {
+        let error = format!("Error creating directories: {}", e);
+        return (error.clone(), error);
     }
+
+    // Get old content if file exists (for diff)
+    let old_content = fs::read_to_string(path).unwrap_or_default();
 
     // Write file
     match fs::write(path, content) {
@@ -515,7 +521,10 @@ fn execute_write(args: &serde_json::Map<String, Value>) -> (String, String) {
                 .and_then(|n| n.to_str())
                 .unwrap_or(path);
             let summary = format!("Writing {}", filename);
-            let result = format!("Written {} bytes to {}", content.len(), path);
+
+            // Generate diff
+            let diff = generate_diff(&old_content, content, filename);
+            let result = format!("Written {} bytes to {}\n\n{}", content.len(), path, diff);
             (summary, result)
         }
         Err(e) => {
@@ -574,14 +583,17 @@ fn execute_edit(args: &serde_json::Map<String, Value>) -> (String, String) {
     let new_content = content.replacen(old_string, new_string, 1);
 
     // Write back
-    match fs::write(path, new_content) {
+    match fs::write(path, &new_content) {
         Ok(_) => {
             let filename = Path::new(path)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(path);
             let summary = format!("Editing {}", filename);
-            let result = format!("Successfully edited {}", path);
+
+            // Generate diff
+            let diff = generate_diff(&content, &new_content, filename);
+            let result = format!("Successfully edited {}\n\n{}", path, diff);
             (summary, result)
         }
         Err(e) => {
@@ -629,10 +641,7 @@ fn execute_webfetch(args: &serde_json::Map<String, Value>) -> (String, String) {
 
                 // Truncate if needed
                 let result = if text.len() > MAX_CONTENT {
-                    format!(
-                        "{}\n[Content truncated at 32KB]",
-                        &text[..MAX_CONTENT]
-                    )
+                    format!("{}\n[Content truncated at 32KB]", &text[..MAX_CONTENT])
                 } else {
                     text
                 };
@@ -669,4 +678,40 @@ fn strip_html_tags(html: &str) -> String {
     // Clean up excessive whitespace
     let lines: Vec<&str> = result.lines().filter(|l| !l.trim().is_empty()).collect();
     lines.join("\n")
+}
+
+fn generate_diff(old: &str, new: &str, filename: &str) -> String {
+    let diff = TextDiff::from_lines(old, new);
+    let mut result = format!("--- {}\n+++ {}\n", filename, filename);
+
+    let mut context_lines = Vec::new();
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Delete => {
+                result.push_str(&format!("- {}", change));
+            }
+            ChangeTag::Insert => {
+                result.push_str(&format!("+ {}", change));
+            }
+            ChangeTag::Equal => {
+                context_lines.push(format!("  {}", change));
+            }
+        }
+    }
+
+    // If file was new (no old content), show it differently
+    if old.is_empty() && !new.is_empty() {
+        result = format!("--- (new file)\n+++ {}\n", filename);
+        for line in new.lines() {
+            result.push_str(&format!("+ {}\n", line));
+        }
+    }
+
+    // Limit diff output to 2000 chars to avoid overwhelming the user
+    if result.len() > 2000 {
+        result.truncate(2000);
+        result.push_str("\n\n... (diff truncated, too many changes)");
+    }
+
+    result
 }

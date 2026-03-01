@@ -67,10 +67,9 @@ impl Db {
         )?;
 
         // Migrate existing tables if needed (add tool_call_id column if it doesn't exist)
-        let _ = self.conn.execute(
-            "ALTER TABLE messages ADD COLUMN tool_call_id TEXT",
-            [],
-        );
+        let _ = self
+            .conn
+            .execute("ALTER TABLE messages ADD COLUMN tool_call_id TEXT", []);
 
         // Run PRAGMA optimize to analyze tables if they have any data
         self.conn.execute_batch("PRAGMA optimize;")?;

@@ -175,7 +175,10 @@ fn test_load_agents_context_no_files() {
     let context = config.load_agents_context();
     // In this project, there IS a local AGENTS.md, so context should be Some
     // This test verifies the function returns Some when local file exists as fallback
-    assert!(context.is_some(), "Should return Some when local AGENTS.md exists as fallback");
+    assert!(
+        context.is_some(),
+        "Should return Some when local AGENTS.md exists as fallback"
+    );
 }
 
 #[test]
@@ -190,5 +193,8 @@ fn test_load_agents_context_with_custom_path() {
     };
     let context = config.load_agents_context();
     // Should return Some since local AGENTS.md exists in the project
-    assert!(context.is_some(), "Should return Some when local AGENTS.md is available");
+    assert!(
+        context.is_some(),
+        "Should return Some when local AGENTS.md is available"
+    );
 }

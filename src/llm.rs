@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -269,46 +269,46 @@ pub fn call_llm(
 
                     // Extract tool call id and function components
                     // First, if this delta has an id, start a new partial tool call
-                    if let Some(id) = tool_call.get("id").and_then(|i| i.as_str()) {
-                        if let Some(function) = tool_call.get("function") {
-                            // Get the function name if present
-                            if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
-                                // Start a new partial tool call if we don't have one
-                                if partial_tool_call.is_none() {
-                                    partial_tool_call = Some(PartialToolCall {
-                                        id: id.to_string(),
-                                        name: name.to_string(),
-                                        arguments: String::new(),
-                                    });
-                                }
+                    if let Some(id) = tool_call.get("id").and_then(|i| i.as_str())
+                        && let Some(function) = tool_call.get("function")
+                    {
+                        // Get the function name if present
+                        if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
+                            // Start a new partial tool call if we don't have one
+                            if partial_tool_call.is_none() {
+                                partial_tool_call = Some(PartialToolCall {
+                                    id: id.to_string(),
+                                    name: name.to_string(),
+                                    arguments: String::new(),
+                                });
                             }
                         }
                     }
 
                     // Accumulate arguments from this delta (regardless of whether it has an id)
                     // This handles fragments that are sent without id but are part of the tool call
-                    if let Some(function) = tool_call.get("function") {
-                        if let Some(args_fragment) = function.get("arguments").and_then(|a| a.as_str()) {
-                            if let Some(ref mut partial) = partial_tool_call {
-                                partial.arguments.push_str(args_fragment);
+                    if let Some(function) = tool_call.get("function")
+                        && let Some(args_fragment) =
+                            function.get("arguments").and_then(|a| a.as_str())
+                        && let Some(ref mut partial) = partial_tool_call
+                    {
+                        partial.arguments.push_str(args_fragment);
 
-                                // Only try parsing if it might be complete (ends with })
-                                if partial.arguments.ends_with('}') {
-                                    // Try to parse accumulated arguments as JSON
-                                    if let Ok(args_json) =
-                                        serde_json::from_str::<serde_json::Value>(&partial.arguments)
-                                        && let Some(args_obj) = args_json.as_object()
-                                    {
-                                        // Successfully parsed! Emit the tool call
-                                        let _ = tx.send(LlmEvent::ToolCall {
-                                            id: partial.id.clone(),
-                                            name: partial.name.clone(),
-                                            args: args_obj.clone(),
-                                        });
-                                        // Clear the partial to avoid re-emitting
-                                        partial_tool_call = None;
-                                    }
-                                }
+                        // Only try parsing if it might be complete (ends with })
+                        if partial.arguments.ends_with('}') {
+                            // Try to parse accumulated arguments as JSON
+                            if let Ok(args_json) =
+                                serde_json::from_str::<serde_json::Value>(&partial.arguments)
+                                && let Some(args_obj) = args_json.as_object()
+                            {
+                                // Successfully parsed! Emit the tool call
+                                let _ = tx.send(LlmEvent::ToolCall {
+                                    id: partial.id.clone(),
+                                    name: partial.name.clone(),
+                                    args: args_obj.clone(),
+                                });
+                                // Clear the partial to avoid re-emitting
+                                partial_tool_call = None;
                             }
                         }
                     }
@@ -334,7 +334,6 @@ pub fn call_llm(
                     });
                 }
             }
-
         }
     }
 
