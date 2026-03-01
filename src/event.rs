@@ -16,8 +16,16 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 true
             };
 
-            // Add content
-            app.pending_response.push_str(&t);
+            // Add content - trim leading whitespace from first token of new response
+            // to avoid gaps after tool calls (e.g., "\n\nHere's the answer...")
+            if app.pending_response.is_empty() {
+                let trimmed = t.trim_start();
+                if !trimmed.is_empty() {
+                    app.pending_response.push_str(trimmed);
+                }
+            } else {
+                app.pending_response.push_str(&t);
+            }
 
             // Auto-scroll to bottom if we were at bottom before content arrived
             if was_at_bottom {
@@ -74,6 +82,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
             if app.active_llm_calls == 0 {
                 app.progress = None;
+                app.progress_start_frame = u32::MAX;
             }
 
             // Auto-scroll to bottom if we were at bottom before message added
@@ -103,6 +112,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
             if app.active_llm_calls == 0 {
                 app.progress = None;
+                app.progress_start_frame = u32::MAX;
             }
 
             // Auto-scroll to bottom if we were at bottom before message added
@@ -121,11 +131,17 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
         LlmEvent::ToolCall { name, args } => {
             // First, save any pending thinking/response as an assistant message
             // This preserves the LLM's thought process before the tool call
+            // Trim trailing newlines to avoid gaps where the <tool_call> was stripped
             let text = std::mem::take(&mut app.pending_response);
+            let text = text.trim_end().to_string();
             let thinking = if app.pending_thinking.is_empty() {
                 None
             } else {
-                Some(std::mem::take(&mut app.pending_thinking))
+                Some(
+                    std::mem::take(&mut app.pending_thinking)
+                        .trim_end()
+                        .to_string(),
+                )
             };
             if !text.is_empty() || thinking.is_some() {
                 let msg = Message {
@@ -154,6 +170,9 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.send_to_llm();
         }
         LlmEvent::Progress(p) => {
+            if app.progress.is_none() {
+                app.progress_start_frame = app.frame_count;
+            }
             app.progress = Some(p);
         }
         LlmEvent::ApiLog {

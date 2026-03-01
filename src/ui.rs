@@ -107,16 +107,32 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
 }
 
 fn draw_messages(app: &mut App, frame: &mut Frame) {
-    let mut lines = Vec::new();
+    let mut lines: Vec<Line> = Vec::new();
     let mut text_lines = Vec::new();
     let available_width = (app.messages_rect.width.saturating_sub(4)) as usize;
 
     for msg in &app.messages {
+        // Skip messages with no content (empty text and no thinking)
+        if msg.text.is_empty() && msg.thinking.is_none() {
+            continue;
+        }
+
         if msg.role == "user" {
-            // Add top padding with black background
-            let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
-            lines.push(Line::from(vec![padding_line]));
-            text_lines.push(String::new());
+            // If this is a tool result, remove the blank line separator from the previous message
+            if msg.is_tool_result
+                && !lines.is_empty()
+                && lines.last().map(|l| l.spans.is_empty()).unwrap_or(false)
+            {
+                lines.pop();
+                text_lines.pop();
+            }
+
+            // Add top padding with black background (but not for tool results)
+            if !msg.is_tool_result {
+                let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
+                lines.push(Line::from(vec![padding_line]));
+                text_lines.push(String::new());
+            }
 
             if msg.is_tool_result {
                 // Tool results already contain a brief summary (e.g., "Reading config.yaml")
@@ -147,9 +163,11 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                     lines.push(Line::from(vec![Span::styled(padded, style)]));
                     text_lines.push(line_text);
                 }
-                // Empty line between thinking and response
-                lines.push(Line::from(""));
-                text_lines.push(String::new());
+                // Empty line between thinking and response (only if there's response text)
+                if !msg.text.is_empty() {
+                    lines.push(Line::from(""));
+                    text_lines.push(String::new());
+                }
             }
             // Render main response text
             let wrapped = wrap_text(&msg.text, available_width);
@@ -163,8 +181,8 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 text_lines.push(line_text);
             }
         }
-        // Add bottom padding for user messages with black background, regular blank for others
-        if msg.role == "user" {
+        // Add bottom padding for user messages with black background (but not for tool results)
+        if msg.role == "user" && !msg.is_tool_result {
             let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
             lines.push(Line::from(vec![padding_line]));
         } else {
@@ -505,14 +523,18 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
                 Style::default().fg(Color::DarkGray),
             ));
 
-            // Show progress percentage if available
+            // Show progress percentage if available and 1 second has passed
+            // (to avoid flashing on fast inference - ~60 frames at 60fps)
             if let Some(progress) = app.progress {
-                let percentage = (progress * 100.0) as u32;
-                left_spans.push(Span::raw(" "));
-                left_spans.push(Span::styled(
-                    format!("{}%", percentage),
-                    Style::default().fg(Color::Cyan),
-                ));
+                let frames_since_start = app.frame_count.saturating_sub(app.progress_start_frame);
+                if frames_since_start >= 60 {
+                    let percentage = (progress * 100.0) as u32;
+                    left_spans.push(Span::raw(" "));
+                    left_spans.push(Span::styled(
+                        format!("{}%", percentage),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
             }
         }
     }
