@@ -92,6 +92,27 @@ fn test_parse_markdown_italic() {
 }
 
 #[test]
+fn test_parse_markdown_single_word_italic() {
+    // Test single asterisk around a word within a sentence
+    let text = "This has *formatting* in it";
+    let spans = parse_markdown_line(text);
+    // Should have 3 spans: "This has ", "formatting" (italic), " in it"
+    assert!(
+        spans.len() >= 3,
+        "Expected at least 3 spans, got {}: {:?}",
+        spans.len(),
+        spans.iter().map(|s| s.content.clone()).collect::<Vec<_>>()
+    );
+
+    // Find the italic span (should be "formatting" without the asterisks)
+    let italic_span = spans.iter().find(|s| s.content == "formatting");
+    assert!(
+        italic_span.is_some(),
+        "Should have span with 'formatting' content"
+    );
+}
+
+#[test]
 fn test_parse_markdown_code() {
     let text = "`code`";
     let spans = parse_markdown_line(text);

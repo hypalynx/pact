@@ -86,7 +86,10 @@ pub fn call_llm(
 
     // Add system prompt as proper system message if present
     if let Some(prompt) = system_prompt {
-        msg_payload.push(json!({ "role": "system", "content": prompt }));
+        msg_payload.push(json!({
+            "role": "system",
+            "content": [{"type": "text", "text": prompt}]
+        }));
     }
 
     // Add conversation messages
@@ -103,8 +106,11 @@ pub fn call_llm(
             }
             tool_msg
         } else {
-            // Regular messages: single string content
-            json!({ "role": m.role, "content": m.text })
+            // Regular messages: array format content
+            json!({
+                "role": m.role,
+                "content": [{"type": "text", "text": m.text}]
+            })
         };
         msg_payload.push(msg);
     }

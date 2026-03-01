@@ -163,12 +163,18 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 text_lines.push(msg.text.clone());
 
                 // Only show full content for tools that should display their output
-                // Write, Edit, Bash, Webfetch show full content
-                // Read, Glob, Grep only show summary
-                let should_display_content = msg.tool_name.as_ref().map(|name| {
-                    matches!(name.as_str(), "Write" | "Edit" | "Bash" | "Webfetch" |
-                        "write" | "edit" | "bash" | "webfetch")
-                }).unwrap_or(false);
+                // Write, Edit, Bash show full content
+                // Read, Glob, Grep, Webfetch only show summary
+                let should_display_content = msg
+                    .tool_name
+                    .as_ref()
+                    .map(|name| {
+                        matches!(
+                            name.as_str(),
+                            "Write" | "Edit" | "Bash" | "write" | "edit" | "bash"
+                        )
+                    })
+                    .unwrap_or(false);
 
                 if should_display_content {
                     // Don't use wrap_text for diffs - preserve formatting

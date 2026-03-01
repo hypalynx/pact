@@ -203,10 +203,7 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
                 match full.to_str() {
                     Some(p) => p.to_string(),
                     None => {
-                        return (
-                            "Error: invalid path".to_string(),
-                            String::new(),
-                        );
+                        return ("Error: invalid path".to_string(), String::new());
                     }
                 }
             }
