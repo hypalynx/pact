@@ -1,5 +1,9 @@
 # Pact AI Agent Instructions
 
+## Testing
+- **Always run `make test` to confirm code changes and run the test suite.** This checks formatting, linting, and runs all 118 tests.
+
+## Debugging & Database
 - When asked to look in the logs or debug, you should look in the
   users ~/.config/pact/pact.db sqlite database. You should be
   able to figure out the schema by reading ./src/db.rs where we
