@@ -338,8 +338,6 @@ fn execute_grep(args: &serde_json::Map<String, Value>) -> (String, String) {
 }
 
 fn execute_bash(args: &serde_json::Map<String, Value>) -> (String, String) {
-    const MAX_OUTPUT: usize = 65536; // 64KB
-
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(c) => c,
         None => {
@@ -368,6 +366,15 @@ fn execute_bash(args: &serde_json::Map<String, Value>) -> (String, String) {
         }
         ValidationResult::Safe => {}
     }
+
+    execute_bash_unchecked(command, Some(description))
+}
+
+/// Execute bash command without validation - used only after user confirmation
+pub fn execute_bash_unchecked(command: &str, description_opt: Option<&str>) -> (String, String) {
+    const MAX_OUTPUT: usize = 65536; // 64KB
+
+    let description = description_opt.unwrap_or(command);
 
     // Execute command with timeout
     match std::process::Command::new("sh")
@@ -398,13 +405,13 @@ fn execute_bash(args: &serde_json::Map<String, Value>) -> (String, String) {
 }
 
 #[derive(Debug)]
-enum ValidationResult {
+pub enum ValidationResult {
     Safe,
     HardBlocked(String),
     SoftBlocked(String),
 }
 
-fn validate_bash_command(command: &str) -> ValidationResult {
+pub fn validate_bash_command(command: &str) -> ValidationResult {
     let cmd_lower = command.to_lowercase();
 
     // Hard blocklist - always reject these

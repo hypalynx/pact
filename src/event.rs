@@ -149,6 +149,102 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             args,
             call_id: _,
         } => {
+            // Check if this is a Bash tool call that might be dangerous
+            if name == "Bash"
+                && let Some(command) = args.get("command").and_then(|v| v.as_str())
+            {
+                match tools::validate_bash_command(command) {
+                    tools::ValidationResult::HardBlocked(reason) => {
+                        // Save pending response first
+                        let text = std::mem::take(&mut app.pending_response);
+                        let text = text.trim_end().to_string();
+                        let thinking = if app.pending_thinking.is_empty() {
+                            None
+                        } else {
+                            Some(
+                                std::mem::take(&mut app.pending_thinking)
+                                    .trim_end()
+                                    .to_string(),
+                            )
+                        };
+                        if !text.is_empty() || thinking.is_some() {
+                            let msg = Message {
+                                role: "assistant".to_string(),
+                                text,
+                                is_tool_result: false,
+                                thinking,
+                                tool_result_content: None,
+                                tool_call_id: None,
+                                tool_name: None,
+                            };
+                            app.messages.push(msg.clone());
+                            if let Some(db) = &app.db {
+                                let _ = db.save_message(&msg);
+                            }
+                        }
+
+                        // Push tool result message with hard block message
+                        let error = format!("Command blocked for safety: {}", reason);
+                        let result_msg = Message {
+                            role: "user".to_string(),
+                            text: "Command blocked".to_string(),
+                            is_tool_result: true,
+                            thinking: None,
+                            tool_result_content: Some(error),
+                            tool_call_id: Some(id),
+                            tool_name: Some(name),
+                        };
+                        app.messages.push(result_msg.clone());
+                        if let Some(db) = &app.db {
+                            let _ = db.save_message(&result_msg);
+                        }
+
+                        // Send LLM result
+                        app.send_to_llm();
+                        return;
+                    }
+                    tools::ValidationResult::SoftBlocked(reason) => {
+                        // Save pending response first
+                        let text = std::mem::take(&mut app.pending_response);
+                        let text = text.trim_end().to_string();
+                        let thinking = if app.pending_thinking.is_empty() {
+                            None
+                        } else {
+                            Some(
+                                std::mem::take(&mut app.pending_thinking)
+                                    .trim_end()
+                                    .to_string(),
+                            )
+                        };
+                        if !text.is_empty() || thinking.is_some() {
+                            let msg = Message {
+                                role: "assistant".to_string(),
+                                text,
+                                is_tool_result: false,
+                                thinking,
+                                tool_result_content: None,
+                                tool_call_id: None,
+                                tool_name: None,
+                            };
+                            app.messages.push(msg.clone());
+                            if let Some(db) = &app.db {
+                                let _ = db.save_message(&msg);
+                            }
+                        }
+
+                        // Pause and wait for user confirmation
+                        app.pending_bash_confirm = Some(crate::app::PendingBashConfirm {
+                            tool_id: id,
+                            command: command.to_string(),
+                            reason,
+                            args,
+                        });
+                        return;
+                    }
+                    tools::ValidationResult::Safe => {}
+                }
+            }
+
             // Check if at bottom BEFORE adding content
             let was_at_bottom = if app.messages_rect.height > 0 {
                 let (at_bottom, _) = app.calculate_scroll_info();
@@ -291,6 +387,11 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     // Handle API key input mode
     if app.api_key_input.is_some() {
         return handle_api_key_input_key(app, key);
+    }
+
+    // Handle bash confirmation mode
+    if app.pending_bash_confirm.is_some() {
+        return handle_bash_confirm_key(app, key);
     }
 
     // Handle panel-specific keys
@@ -670,6 +771,70 @@ fn handle_api_key_input_key(app: &mut App, key: KeyEvent) -> bool {
         }
         _ => {}
     }
+    true
+}
+
+/// Handle bash confirmation specific keys
+fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
+    let confirm = match key.code {
+        KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => Some(true),
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => Some(false),
+        _ => None,
+    };
+
+    if let Some(approved) = confirm {
+        if let Some(pending) = app.pending_bash_confirm.take() {
+            let was_at_bottom = if app.messages_rect.height > 0 {
+                let (at_bottom, _) = app.calculate_scroll_info();
+                at_bottom
+            } else {
+                true
+            };
+
+            if approved {
+                // User approved - execute the command
+                let (summary, content) = tools::execute_bash_unchecked(&pending.command, None);
+                let result_msg = Message {
+                    role: "user".to_string(),
+                    text: summary,
+                    is_tool_result: true,
+                    thinking: None,
+                    tool_result_content: Some(content),
+                    tool_call_id: Some(pending.tool_id),
+                    tool_name: Some("Bash".to_string()),
+                };
+                app.messages.push(result_msg.clone());
+                if let Some(db) = &app.db {
+                    let _ = db.save_message(&result_msg);
+                }
+            } else {
+                // User denied - send denial message
+                let result_msg = Message {
+                    role: "user".to_string(),
+                    text: "Command denied".to_string(),
+                    is_tool_result: true,
+                    thinking: None,
+                    tool_result_content: Some("Command denied by user.".to_string()),
+                    tool_call_id: Some(pending.tool_id),
+                    tool_name: Some("Bash".to_string()),
+                };
+                app.messages.push(result_msg.clone());
+                if let Some(db) = &app.db {
+                    let _ = db.save_message(&result_msg);
+                }
+            }
+
+            // Auto-scroll to bottom if we were at bottom before
+            if was_at_bottom && !app.user_scrolled {
+                let total_lines = app.calculate_total_lines();
+                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
+            }
+
+            app.send_to_llm();
+        }
+        return true;
+    }
+
     true
 }
 

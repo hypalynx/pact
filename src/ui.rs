@@ -131,6 +131,11 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     if app.api_key_input.is_some() {
         draw_api_key_input(app, frame);
     }
+
+    // Draw bash confirmation prompt if active
+    if app.pending_bash_confirm.is_some() {
+        draw_bash_confirm(app, frame);
+    }
 }
 
 fn draw_messages(app: &mut App, frame: &mut Frame) {
@@ -832,6 +837,73 @@ fn draw_api_key_input(app: &App, frame: &mut Frame) {
             // Mask the API key with asterisks
             let masked = "*".repeat(key.len());
             let lines = vec![Line::from(Span::styled(masked, Style::default()))];
+            frame.render_widget(Paragraph::new(lines), inner);
+        }
+    }
+}
+
+fn draw_bash_confirm(app: &App, frame: &mut Frame) {
+    if let Some(confirm) = &app.pending_bash_confirm {
+        let height = 5_u16;
+        let area = Rect {
+            x: app.input_rect.x,
+            y: app.input_rect.y.saturating_sub(height),
+            width: app.input_rect.width,
+            height,
+        };
+
+        if app.input_rect.y >= height {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .title("Dangerous Command")
+                .style(Style::default().bg(Color::Black));
+
+            let inner = area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 1,
+            });
+
+            frame.render_widget(Clear, area);
+            frame.render_widget(block, area);
+
+            // Build content lines
+            let mut lines = Vec::new();
+
+            // Command line (truncate if too long)
+            let cmd_display = if confirm.command.len() > (inner.width as usize).saturating_sub(2) {
+                format!(
+                    "{}...",
+                    &confirm.command[..inner.width.saturating_sub(5) as usize]
+                )
+            } else {
+                confirm.command.clone()
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  {}", cmd_display),
+                Style::default().fg(Color::Yellow),
+            )));
+
+            // Reason line (truncate if too long)
+            let reason_display = if confirm.reason.len() > (inner.width as usize).saturating_sub(2)
+            {
+                format!(
+                    "{}...",
+                    &confirm.reason[..inner.width.saturating_sub(5) as usize]
+                )
+            } else {
+                confirm.reason.clone()
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  Reason: {}", reason_display),
+                Style::default().fg(Color::DarkGray),
+            )));
+
+            // Instructions line
+            lines.push(Line::from(Span::styled(
+                "  [y] Allow   [n] Deny",
+                Style::default().fg(Color::Cyan),
+            )));
+
             frame.render_widget(Paragraph::new(lines), inner);
         }
     }

@@ -13,6 +13,13 @@ pub enum PanelState {
     Debug,
 }
 
+pub struct PendingBashConfirm {
+    pub tool_id: String,
+    pub command: String,
+    pub reason: String,
+    pub args: serde_json::Map<String, serde_json::Value>,
+}
+
 pub struct FilePicker {
     pub query: String,
     pub at_start: usize, // byte offset in `input` where @ was typed
@@ -144,6 +151,9 @@ pub struct App {
     pub call_counter: u64,
     pub active_call_id: Option<u64>,
     pub pending_send: bool,
+
+    // Pending bash confirmation
+    pub pending_bash_confirm: Option<PendingBashConfirm>,
 }
 
 impl App {
@@ -224,6 +234,7 @@ impl App {
             call_counter: 0,
             active_call_id: None,
             pending_send: false,
+            pending_bash_confirm: None,
         }
     }
 
