@@ -10,6 +10,7 @@ build_linux() {
     cp target/x86_64-unknown-linux-gnu/release/pact pact-linux-amd64
     chmod +x pact-linux-amd64
     echo "Created pact-linux-amd64"
+    cp pact-linux-amd64 ~/.local/bin/pact
 }
 
 build_macos() {
@@ -18,6 +19,7 @@ build_macos() {
     cp target/aarch64-apple-darwin/release/pact pact-macos-arm64
     chmod +x pact-macos-arm64
     echo "Created pact-macos-arm64"
+    cp pact-macos-arm64 ~/.local/bin/pact
 }
 
 case "$OS" in
