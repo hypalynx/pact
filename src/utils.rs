@@ -3,24 +3,10 @@ use std::path::PathBuf;
 pub fn get_pwd_display() -> String {
     match std::env::current_dir() {
         Ok(path) => {
-            let home = dirs::home_dir();
-            let path_str = path.to_string_lossy().to_string();
-
-            if let Some(home_path) = home {
-                let home_str = home_path.to_string_lossy().to_string();
-                if path_str.starts_with(&home_str) {
-                    let remainder = path_str[home_str.len()..].to_string();
-                    if remainder.is_empty() {
-                        "~".to_string()
-                    } else {
-                        format!("~{}", remainder)
-                    }
-                } else {
-                    path_str
-                }
-            } else {
-                path_str
-            }
+            // Show just the current directory name
+            path.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| "/".to_string())
         }
         Err(_) => ".".to_string(),
     }
@@ -196,4 +182,14 @@ pub fn db_path() -> PathBuf {
     std::fs::create_dir_all(&path).ok();
     path.push("pact.db");
     path
+}
+
+/// Generate a short 7-character hex session ID
+pub fn generate_session_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros();
+    format!("{:07x}", timestamp % 0x10000000)
 }

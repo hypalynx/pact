@@ -607,7 +607,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
             let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
             left_spans.push(Span::styled(
                 braille.to_string(),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Red),
             ));
         }
     }
@@ -624,22 +624,36 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         .map(|p| p.name.as_str())
         .unwrap_or("local");
     // Use app.model_name (from server info) if available, otherwise fall back to provider's default_model
-    let model_id = if !app.model_name.is_empty() && app.model_name != "unknown" {
-        &app.model_name
+    let raw_model_id = if !app.model_name.is_empty() && app.model_name != "unknown" {
+        app.model_name.clone()
     } else {
         app.active_provider
             .as_ref()
-            .and_then(|p| p.default_model.as_ref())
-            .map(|m| m.as_str())
-            .unwrap_or("local")
+            .and_then(|p| p.default_model.clone())
+            .unwrap_or_else(|| "local".to_string())
     };
+    // Extract just the model name from paths like "accounts/fireworks/models/kimi-k2p5"
+    let model_id = raw_model_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(&raw_model_id)
+        .to_string();
+    let (_, total_lines) = app.calculate_scroll_info();
+    let max_scroll = total_lines.saturating_sub(app.messages_rect.height as usize);
+    let scroll_info = if max_scroll > 0 {
+        format!(" [{}%]", (app.scroll_offset * 100) / max_scroll)
+    } else {
+        String::new()
+    };
+
     let right_text = format!(
-        "[{}] {} | {}/{} ({}%)",
+        "[{}] {} | {}/{} ({}%){}",
         provider_name,
         model_id,
         format_tokens(tokens_used),
         format_tokens(app.context_window),
-        percentage
+        percentage,
+        scroll_info
     );
 
     let status_style = Style::default().fg(Color::DarkGray);
@@ -743,6 +757,8 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
                 match picker.command {
                     crate::app::SlashCommand::Model => format!("/model {}", picker.query),
                     crate::app::SlashCommand::Connect => "Enter API Key".to_string(),
+                    crate::app::SlashCommand::New => "New Session".to_string(),
+                    crate::app::SlashCommand::Clear => "Clear History".to_string(),
                 }
             };
 

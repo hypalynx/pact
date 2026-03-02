@@ -37,8 +37,8 @@ fn test_get_pwd_display() {
     // This function depends on current_dir, so we just verify it returns a string
     let pwd = get_pwd_display();
     assert!(!pwd.is_empty());
-    // It should either be ".", a path, or contain "~" if in home
-    assert!(pwd == "." || pwd.starts_with("/") || pwd.contains("~"));
+    // It should return just the directory name (no path separators)
+    assert!(!pwd.contains('/'));
 }
 
 #[test]

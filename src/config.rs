@@ -39,7 +39,7 @@ pub struct UiConfig {
 }
 
 fn default_mode() -> String {
-    "build".to_string()
+    "plan".to_string()
 }
 
 impl Default for UiConfig {
@@ -83,19 +83,41 @@ impl Config {
     fn default_modes() -> IndexMap<String, Mode> {
         let mut modes = IndexMap::new();
         modes.insert(
-            "build".to_string(),
+            "plan".to_string(),
             Mode {
-                system_prompt: Some("You are a helpful coding assistant...".to_string()),
-                temperature: None,
-                color: Some("cyan".to_string()),
+                system_prompt: Some(
+                    "You are in PLAN mode - for analysis, exploration, and designing solutions.
+
+You can:
+- Read any file (Read, Glob, Grep tools)
+- Run shell commands to understand the project (Bash)
+- Fetch web content (Webfetch)
+- Write and edit markdown files (.md) for plans and notes
+
+You CANNOT write or edit non-markdown files in this mode.
+If you need to implement code, tell the user to press Tab to switch to Build mode.
+
+Focus on: understanding the codebase, designing solutions, writing clear plans."
+                        .to_string(),
+                ),
+                temperature: Some(0.5),
+                color: Some("green".to_string()),
             },
         );
         modes.insert(
-            "plan".to_string(),
+            "build".to_string(),
             Mode {
-                system_prompt: Some("You are an expert at planning implementations...".to_string()),
-                temperature: Some(0.5),
-                color: Some("green".to_string()),
+                system_prompt: Some(
+                    "You are in BUILD mode - full capability implementation assistant.
+
+All tools are available: Read, Glob, Grep, Write, Edit, Bash, Webfetch.
+
+Focus on: implementing, debugging, and refactoring code.
+Press Tab to switch to Plan mode for analysis and planning."
+                        .to_string(),
+                ),
+                temperature: None,
+                color: Some("cyan".to_string()),
             },
         );
         modes

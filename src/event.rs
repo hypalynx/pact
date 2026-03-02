@@ -1,4 +1,4 @@
-use crate::app::{App, PanelState, SlashCommand};
+use crate::app::{App, DEFAULT_MAX_TOKENS, PanelState, SlashCommand};
 use crate::llm::{LlmEvent, Message};
 use crate::tools;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -32,6 +32,9 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if was_at_bottom && !app.user_scrolled {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
+            } else {
+                // Ensure scroll offset stays valid even when not auto-scrolling
+                app.clamp_scroll_offset();
             }
         }
         LlmEvent::Thinking(t, _call_id) => {
@@ -52,6 +55,9 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if was_at_bottom && !app.user_scrolled {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
+            } else {
+                // Ensure scroll offset stays valid even when not auto-scrolling
+                app.clamp_scroll_offset();
             }
         }
         LlmEvent::Done(_call_id) => {
@@ -64,12 +70,21 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 true
             };
 
-            let text = std::mem::take(&mut app.pending_response);
+            let mut text = std::mem::take(&mut app.pending_response);
             let thinking = if app.pending_thinking.is_empty() {
                 None
             } else {
                 Some(std::mem::take(&mut app.pending_thinking))
             };
+
+            // Check if we hit the token limit and append warning
+            if app.last_output_tokens >= DEFAULT_MAX_TOKENS {
+                text.push_str("\n\n[Response truncated: reached max token limit (");
+                text.push_str(&DEFAULT_MAX_TOKENS.to_string());
+                text.push_str(" tokens)]");
+            }
+            app.last_output_tokens = 0;
+
             let msg = Message {
                 role: "assistant".to_string(),
                 text,
@@ -90,6 +105,9 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if was_at_bottom {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
+            } else {
+                // Ensure scroll offset stays valid even if user manually scrolled
+                app.clamp_scroll_offset();
             }
 
             // Queue mode: if user tried to send while we were busy, send now
@@ -142,6 +160,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
         } => {
             app.total_input_tokens += input_tokens;
             app.total_output_tokens += output_tokens;
+            app.last_output_tokens = output_tokens;
         }
         LlmEvent::ToolCall {
             id,
@@ -242,6 +261,64 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                         return;
                     }
                     tools::ValidationResult::Safe => {}
+                }
+            }
+
+            // Plan mode: Write/Edit restricted to .md files
+            if app.mode_name == "plan" && (name == "Write" || name == "Edit") {
+                let path = args.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+                if !path.ends_with(".md") {
+                    // Save pending response first
+                    let text = std::mem::take(&mut app.pending_response);
+                    let text = text.trim_end().to_string();
+                    let thinking = if app.pending_thinking.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            std::mem::take(&mut app.pending_thinking)
+                                .trim_end()
+                                .to_string(),
+                        )
+                    };
+                    if !text.is_empty() || thinking.is_some() {
+                        let msg = Message {
+                            role: "assistant".to_string(),
+                            text,
+                            is_tool_result: false,
+                            thinking,
+                            tool_result_content: None,
+                            tool_call_id: None,
+                            tool_name: None,
+                        };
+                        app.messages.push(msg.clone());
+                        if let Some(db) = &app.db {
+                            let _ = db.save_message(&msg);
+                        }
+                    }
+
+                    // Push tool result message with plan mode block message
+                    let error = format!(
+                        "Blocked in plan mode: {} is only allowed for .md files. \
+                         To modify source code, the user must press Tab to switch to build mode.",
+                        name
+                    );
+                    let result_msg = Message {
+                        role: "user".to_string(),
+                        text: "Tool blocked".to_string(),
+                        is_tool_result: true,
+                        thinking: None,
+                        tool_result_content: Some(error),
+                        tool_call_id: Some(id),
+                        tool_name: Some(name),
+                    };
+                    app.messages.push(result_msg.clone());
+                    if let Some(db) = &app.db {
+                        let _ = db.save_message(&result_msg);
+                    }
+
+                    // Send LLM result
+                    app.send_to_llm();
+                    return;
                 }
             }
 
@@ -452,7 +529,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
         KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.move_cursor_backward();
         }
-        KeyCode::Char('t') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Tab => {
             app.cycle_mode();
         }
         KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {

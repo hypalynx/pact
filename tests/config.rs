@@ -4,14 +4,14 @@ use pact::config::{Config, Mode, UiConfig};
 #[test]
 fn test_ui_config_defaults() {
     let config = UiConfig::default();
-    assert_eq!(config.default_mode, "build");
+    assert_eq!(config.default_mode, "plan");
     assert!(config.modes.is_empty());
 }
 
 #[test]
 fn test_config_defaults() {
     let config = Config::default();
-    assert_eq!(config.ui.default_mode, "build");
+    assert_eq!(config.ui.default_mode, "plan");
     assert!(!config.debug);
     assert!(config.providers.is_empty());
 }
@@ -41,7 +41,7 @@ fn test_config_load_no_file() {
     // Config::load() checks if config file exists
     // When it doesn't exist, it should return defaults
     let config = Config::load();
-    assert_eq!(config.ui.default_mode, "build");
+    assert_eq!(config.ui.default_mode, "plan");
     // Default modes should include "build" and "plan"
     assert!(config.ui.modes.contains_key("build"));
     assert!(config.ui.modes.contains_key("plan"));

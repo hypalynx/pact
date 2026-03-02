@@ -31,6 +31,8 @@ pub struct FilePicker {
 pub enum SlashCommand {
     Model,
     Connect,
+    New,
+    Clear,
 }
 
 pub struct SlashCommandPicker {
@@ -80,7 +82,7 @@ fn walk_dir(dir: &std::path::Path, out: &mut Vec<String>, depth: usize) {
     }
 }
 
-const DEFAULT_MAX_TOKENS: usize = 1024;
+pub(crate) const DEFAULT_MAX_TOKENS: usize = 8192;
 const SCROLL_STEP: usize = 8;
 
 pub struct App {
@@ -108,6 +110,7 @@ pub struct App {
     pub context_window: usize,
     pub total_input_tokens: usize,
     pub total_output_tokens: usize,
+    pub last_output_tokens: usize,
     pub frame_count: u32,
     pub last_server_check: u32,
     pub api_endpoint: String,
@@ -154,29 +157,40 @@ pub struct App {
 
     // Pending bash confirmation
     pub pending_bash_confirm: Option<PendingBashConfirm>,
+
+    // Session management
+    pub session_id: String,
+    pub working_directory: String,
 }
 
 impl App {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         debug: bool,
         temperature: Option<f32>,
         mode_name: String,
         modes_config: IndexMap<String, crate::config::Mode>,
         agents_context: Option<String>,
+        session_id: String,
+        working_directory: String,
+        messages: Vec<Message>,
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let available_modes: Vec<String> = modes_config.keys().cloned().collect();
         let mode_color = modes_config.get(&mode_name).and_then(|m| m.color.clone());
 
         // Initialize database (graceful failure)
-        let (db, db_error) = match Db::open().and_then(|db| db.init_schema().map(|_| db)) {
-            Ok(db) => (Some(db), None),
+        let (db, db_error) = match Db::open() {
+            Ok(mut db) => match db.run_migrations() {
+                Ok(_) => (Some(db), None),
+                Err(e) => (Some(db), Some(format!("Migration error: {}", e))),
+            },
             Err(e) => (None, Some(format!("Database error: {}", e))),
         };
 
         Self {
             db,
-            messages: Vec::new(),
+            messages,
             history: Vec::new(),
             history_index: None,
             input: String::new(),
@@ -199,6 +213,7 @@ impl App {
             context_window: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            last_output_tokens: 0,
             frame_count: 0,
             last_server_check: 0,
             api_endpoint: String::new(),
@@ -235,6 +250,8 @@ impl App {
             active_call_id: None,
             pending_send: false,
             pending_bash_confirm: None,
+            session_id,
+            working_directory,
         }
     }
 
@@ -298,7 +315,17 @@ impl App {
         self.history_index = None;
         // Save user message to database if available
         if let Some(db) = &self.db {
-            let _ = db.save_message(&msg);
+            let is_first_user_message = self
+                .messages
+                .iter()
+                .filter(|m| m.role == "user" && !m.is_tool_result)
+                .count()
+                == 1;
+            if is_first_user_message {
+                let preview = text.chars().take(60).collect::<String>();
+                let _ = db.update_session_first_prompt(&self.session_id, &preview);
+            }
+            let _ = db.save_message_with_session(&msg, &self.session_id, &self.working_directory);
         }
         self.input = String::new();
         self.cursor_pos = 0;
@@ -360,13 +387,16 @@ impl App {
             .and_then(|p| p.default_model.clone())
             .unwrap_or_else(|| "local".to_string());
 
-        // Use agents_context as system prompt if available, otherwise use mode's system prompt
-        let system_prompt = if let Some(ref ctx) = self.agents_context {
-            Some(ctx.clone())
-        } else {
-            self.modes_config
-                .get(&self.mode_name)
-                .and_then(|m| m.system_prompt.clone())
+        // Combine mode prompt with agents_context
+        let mode_prompt = self
+            .modes_config
+            .get(&self.mode_name)
+            .and_then(|m| m.system_prompt.clone());
+        let system_prompt = match (mode_prompt, &self.agents_context) {
+            (Some(mode), Some(agents)) => Some(format!("{}\n\n{}", mode, agents)),
+            (Some(mode), None) => Some(mode),
+            (None, Some(agents)) => Some(agents.clone()),
+            (None, None) => None,
         };
 
         std::thread::spawn(move || {
@@ -442,8 +472,10 @@ impl App {
                 if let Some(thinking) = &msg.thinking {
                     let wrapped = wrap_text(thinking, available_width);
                     total_lines += wrapped.len();
-                    // Blank line between thinking and response
-                    total_lines += 1;
+                    // Blank line between thinking and response (only if response exists)
+                    if !msg.text.is_empty() {
+                        total_lines += 1;
+                    }
                 }
                 // Account for message text
                 let wrapped = wrap_text(&msg.text, available_width);
@@ -473,6 +505,13 @@ impl App {
     pub fn scroll_up(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_STEP);
         self.user_scrolled = true;
+    }
+
+    /// Clamp scroll_offset to valid bounds after any operation that might change line counts
+    pub fn clamp_scroll_offset(&mut self) {
+        let total_lines = self.calculate_total_lines();
+        let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
+        self.scroll_offset = self.scroll_offset.min(max_scroll);
     }
 
     pub fn scroll_down(&mut self) {
@@ -824,7 +863,11 @@ impl App {
             };
             self.messages.push(cancel_msg.clone());
             if let Some(db) = &self.db {
-                let _ = db.save_message(&cancel_msg);
+                let _ = db.save_message_with_session(
+                    &cancel_msg,
+                    &self.session_id,
+                    &self.working_directory,
+                );
             }
         }
     }
@@ -981,10 +1024,14 @@ impl App {
             all_entries: vec![
                 "/model - Select a model".to_string(),
                 "/connect - Set API key".to_string(),
+                "/new - Start a new session".to_string(),
+                "/clear - Clear current session".to_string(),
             ],
             filtered: vec![
                 "/model - Select a model".to_string(),
                 "/connect - Set API key".to_string(),
+                "/new - Start a new session".to_string(),
+                "/clear - Clear current session".to_string(),
             ],
             selected: 0,
         });
@@ -996,6 +1043,8 @@ impl App {
         let all_entries = match command {
             SlashCommand::Model => self.fetch_available_models(),
             SlashCommand::Connect => vec!["Enter API key for current provider".to_string()],
+            SlashCommand::New => vec!["Start a new session (clears current context)".to_string()],
+            SlashCommand::Clear => vec!["Clear current session context".to_string()],
         };
 
         self.slash_picker = Some(SlashCommandPicker {
@@ -1116,6 +1165,14 @@ impl App {
                     self.error_message = Some("Enter API key (press Enter when done)".to_string());
                     self.last_error_frame = self.frame_count;
                     return;
+                } else if entry.starts_with("/new -") {
+                    // User selected /new from help
+                    self.start_slash_picker(SlashCommand::New, &picker.query);
+                    return;
+                } else if entry.starts_with("/clear -") {
+                    // User selected /clear from help
+                    self.start_slash_picker(SlashCommand::Clear, &picker.query);
+                    return;
                 }
             }
 
@@ -1166,6 +1223,42 @@ impl App {
                     self.input.drain(slash_start..self.cursor_pos);
                     self.cursor_pos = slash_start;
                     self.error_message = Some("Enter API key (press Enter when done)".to_string());
+                    self.last_error_frame = self.frame_count;
+                }
+                SlashCommand::New => {
+                    // Start a new session: generate new session ID, clear messages
+                    self.messages.clear();
+                    self.history.clear();
+                    self.history_index = None;
+                    self.scroll_offset = 0;
+                    let _old_session_id = std::mem::replace(
+                        &mut self.session_id,
+                        crate::utils::generate_session_id(),
+                    );
+                    if let Some(db) = &self.db {
+                        let _ = db.create_session(&self.session_id, &self.working_directory, None);
+                    }
+                    // Remove the slash command from input
+                    let slash_start = picker.slash_start;
+                    self.input.drain(slash_start..self.cursor_pos);
+                    self.cursor_pos = slash_start;
+                    self.error_message = Some(format!("Started new session: {}", self.session_id));
+                    self.last_error_frame = self.frame_count;
+                }
+                SlashCommand::Clear => {
+                    // Clear current session context but keep the session ID
+                    self.messages.clear();
+                    self.history.clear();
+                    self.history_index = None;
+                    self.scroll_offset = 0;
+                    if let Some(db) = &self.db {
+                        let _ = db.clear_session_messages(&self.session_id);
+                    }
+                    // Remove the slash command from input
+                    let slash_start = picker.slash_start;
+                    self.input.drain(slash_start..self.cursor_pos);
+                    self.cursor_pos = slash_start;
+                    self.error_message = Some("Cleared current session".to_string());
                     self.last_error_frame = self.frame_count;
                 }
             }

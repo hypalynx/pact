@@ -8,7 +8,19 @@ use rusqlite::Connection;
 
 /// Create a test app with in-memory database (no database side effects)
 fn create_test_app() -> App {
-    let app = App::new(false, None, "build".to_string(), Default::default(), None);
+    let app = App::new(
+        false,
+        None,
+        "build".to_string(),
+        Default::default(),
+        None,
+        "test_session".to_string(),
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.to_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| ".".to_string()),
+        Vec::new(),
+    );
 
     // Replace the real database with an in-memory one for testing
     let mut app = app;
@@ -33,8 +45,8 @@ fn create_temp_db() -> Result<Db, rusqlite::Error> {
         "#,
     )?;
 
-    let db = Db { conn };
-    db.init_schema()?;
+    let mut db = Db { conn };
+    db.run_migrations()?;
     Ok(db)
 }
 
@@ -334,6 +346,9 @@ fn test_agents_context_stored_in_app() {
         "build".to_string(),
         Default::default(),
         Some("Agent context content here".to_string()),
+        "test_session".to_string(),
+        ".".to_string(),
+        Vec::new(),
     );
 
     // Verify agents_context is stored correctly
@@ -361,6 +376,9 @@ fn test_agents_context_replaces_system_prompt() {
         "build".to_string(),
         modes,
         Some("Agent context content here".to_string()),
+        "test_session".to_string(),
+        ".".to_string(),
+        Vec::new(),
     );
 
     // When agents_context is present, it should replace the mode prompt
@@ -402,6 +420,9 @@ fn test_agents_context_none_uses_only_mode_prompt() {
         "build".to_string(),
         modes,
         None, // No agents context
+        "test_session".to_string(),
+        ".".to_string(),
+        Vec::new(),
     );
 
     // Verify agents_context is None

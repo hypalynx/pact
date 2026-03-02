@@ -7,7 +7,16 @@ use rusqlite::Connection;
 
 /// Create a test app with in-memory database
 fn create_test_app() -> App {
-    let app = App::new(false, None, "build".to_string(), Default::default(), None);
+    let app = App::new(
+        false,
+        None,
+        "build".to_string(),
+        Default::default(),
+        None,
+        "test_session".to_string(),
+        ".".to_string(),
+        Vec::new(),
+    );
 
     let mut app = app;
     match create_temp_db() {
@@ -29,8 +38,8 @@ fn create_temp_db() -> Result<Db, rusqlite::Error> {
         PRAGMA analysis_limit = 400;
         "#,
     )?;
-    let db = Db { conn };
-    db.init_schema()?;
+    let mut db = Db { conn };
+    db.run_migrations()?;
     Ok(db)
 }
 

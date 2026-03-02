@@ -21,6 +21,9 @@ use pact::{event, ui, utils};
 struct Args {
     #[arg(long)]
     debug: bool,
+    /// Resume a session (with optional session ID, or list available sessions)
+    #[arg(long, value_name = "SESSION_ID")]
+    resume: Option<Option<String>>,
 }
 
 const DEFAULT_LOCAL_ENDPOINT: &str = "http://127.0.0.1:7777";
@@ -54,12 +57,107 @@ fn init_providers_from_config(config: &Config) {
     }
 }
 
+fn get_working_dir() -> String {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string())
+}
+
+#[allow(clippy::print_stdout, clippy::print_stderr)]
+fn list_available_sessions(db: &Db, working_dir: &str) -> std::io::Result<()> {
+    match db.get_sessions_for_directory(working_dir) {
+        Ok(sessions) if sessions.is_empty() => {
+            println!("No sessions found in {}", working_dir);
+            println!("Run `pact` to start a new session.");
+        }
+        Ok(sessions) => {
+            println!("Available sessions in {}:", working_dir);
+            for session in sessions {
+                let preview = session
+                    .first_prompt
+                    .as_ref()
+                    .map(|s| s.chars().take(60).collect::<String>())
+                    .unwrap_or_else(|| "(no messages)".to_string());
+                let count = db
+                    .get_session_message_count(&session.session_id)
+                    .unwrap_or(0);
+                let time = session
+                    .created_at
+                    .split('T')
+                    .next()
+                    .unwrap_or(&session.created_at);
+                println!(
+                    "  {}: \"{}\" ({} msgs, {})",
+                    session.session_id, preview, count, time
+                );
+            }
+            println!("\nRun `pact --resume <SESSION_ID>` to resume a specific session.");
+        }
+        Err(e) => {
+            eprintln!("Failed to list sessions: {}", e);
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::print_stdout, clippy::print_stderr)]
+fn handle_session_init(
+    resume_arg: &Option<Option<String>>,
+    working_dir: &str,
+) -> (String, Vec<pact::llm::Message>) {
+    if let Some(resume_arg) = resume_arg {
+        if let Ok(mut db) = Db::open() {
+            let _ = db.run_migrations();
+            match resume_arg {
+                Some(specific_id) => {
+                    // Resume specific session
+                    match db.load_session_messages(specific_id) {
+                        Ok(msgs) => {
+                            println!(
+                                "Resuming session {} with {} messages",
+                                specific_id,
+                                msgs.len()
+                            );
+                            (specific_id.clone(), msgs)
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to load session {}: {}", specific_id, e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                None => {
+                    // List available sessions and exit
+                    list_available_sessions(&db, working_dir).ok();
+                    std::process::exit(0);
+                }
+            }
+        } else {
+            eprintln!("Failed to open database for session management");
+            std::process::exit(1);
+        }
+    } else {
+        // Create new session
+        let new_session_id = utils::generate_session_id();
+        if let Ok(mut db) = Db::open() {
+            let _ = db.run_migrations();
+            let _ = db.create_session(&new_session_id, working_dir, None);
+        }
+        (new_session_id, Vec::new())
+    }
+}
+
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let config = Config::load();
 
     // Initialize providers from config
     init_providers_from_config(&config);
+
+    let working_dir = get_working_dir();
+
+    // Handle session initialization/resuming before starting UI
+    let (session_id, messages_to_load) = handle_session_init(&args.resume, &working_dir);
 
     let mut terminal = ratatui::init();
 
@@ -78,9 +176,11 @@ fn main() -> std::io::Result<()> {
         config.ui.default_mode.clone(),
         modes_config,
         agents_context,
+        session_id,
+        working_dir,
+        messages_to_load,
     );
     // Load history from SQLite database (for up/down arrow navigation)
-    // Don't load previous messages - start with a fresh session
     app.load_history_from_db();
     app.load_providers_from_db();
 

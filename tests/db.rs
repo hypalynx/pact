@@ -20,9 +20,9 @@ fn create_temp_db() -> Db {
 }
 
 #[test]
-fn test_init_schema() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+fn test_run_migrations() {
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to run migrations");
 
     let mut stmt = db
         .conn
@@ -44,8 +44,8 @@ fn test_init_schema() {
 
 #[test]
 fn test_save_and_load_message() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let msg = Message {
         role: "user".to_string(),
@@ -68,8 +68,8 @@ fn test_save_and_load_message() {
 
 #[test]
 fn test_save_tool_result_message() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let msg = Message {
         role: "user".to_string(),
@@ -90,8 +90,8 @@ fn test_save_tool_result_message() {
 
 #[test]
 fn test_save_message_with_thinking() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let msg = Message {
         role: "assistant".to_string(),
@@ -112,8 +112,8 @@ fn test_save_message_with_thinking() {
 
 #[test]
 fn test_clear_messages() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let msg = Message {
         role: "user".to_string(),
@@ -138,8 +138,8 @@ fn test_clear_messages() {
 
 #[test]
 fn test_save_and_load_api_log() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let request = r#"{"model":"test"}"#;
     let response = r#"{"result":"ok"}"#;
@@ -157,8 +157,8 @@ fn test_save_and_load_api_log() {
 
 #[test]
 fn test_save_api_log_with_error() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let request = r#"{"model":"test"}"#;
     let error = "Connection timeout";
@@ -173,8 +173,8 @@ fn test_save_api_log_with_error() {
 
 #[test]
 fn test_clear_api_logs() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     db.save_api_log(r#"{"test":true}"#, None, None, 50, None, None, None)
         .expect("Failed to save API log");
@@ -190,8 +190,8 @@ fn test_clear_api_logs() {
 
 #[test]
 fn test_recent_api_logs_limit() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     for i in 0..5 {
         db.save_api_log(
@@ -212,8 +212,8 @@ fn test_recent_api_logs_limit() {
 
 #[test]
 fn test_load_messages_ordered() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let msg1 = Message {
         role: "user".to_string(),
@@ -246,8 +246,8 @@ fn test_load_messages_ordered() {
 
 #[test]
 fn test_save_api_log_with_all_fields() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let request = r#"{"model":"test"}"#;
     let response = r#"{"result":"ok"}"#;
@@ -278,8 +278,8 @@ fn test_save_api_log_with_all_fields() {
 
 #[test]
 fn test_save_api_log_with_model_name() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let request = r#"{"model":"test"}"#;
     let model_name = "moonshot-v1-8k";
@@ -294,8 +294,8 @@ fn test_save_api_log_with_model_name() {
 
 #[test]
 fn test_save_api_log_with_none_fields() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let request = r#"{"model":"test"}"#;
 
@@ -313,8 +313,8 @@ fn test_save_api_log_with_none_fields() {
 
 #[test]
 fn test_load_empty_messages() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 0);
@@ -322,8 +322,8 @@ fn test_load_empty_messages() {
 
 #[test]
 fn test_recent_api_logs_empty() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
     assert_eq!(logs.len(), 0);
@@ -331,8 +331,8 @@ fn test_recent_api_logs_empty() {
 
 #[test]
 fn test_multiple_messages_with_mixed_types() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     let user_msg = Message {
         role: "user".to_string(),
@@ -379,8 +379,8 @@ fn test_multiple_messages_with_mixed_types() {
 
 #[test]
 fn test_api_log_with_tokens() {
-    let db = create_temp_db();
-    db.init_schema().expect("Failed to init schema");
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
 
     // Manually insert an API log with token counts using direct SQL
     let request = r#"{"model":"test"}"#;

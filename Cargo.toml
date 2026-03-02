@@ -20,6 +20,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 glob = "0.3"
 regex = "1"
 similar = "2"
+refinery = { version = "0.8", features = ["rusqlite"] }
 
 [dev-dependencies]
 tempfile = "3"
