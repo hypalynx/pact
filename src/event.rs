@@ -28,7 +28,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             }
 
             // Auto-scroll to bottom if we were at bottom before content arrived
-            if was_at_bottom {
+            // Don't auto-scroll if user manually scrolled
+            if was_at_bottom && !app.user_scrolled {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
@@ -47,7 +48,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.pending_thinking.push_str(&t);
 
             // Auto-scroll to bottom if we were at bottom before content arrived
-            if was_at_bottom {
+            // Don't auto-scroll if user manually scrolled
+            if was_at_bottom && !app.user_scrolled {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }
@@ -207,7 +209,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             }
 
             // Auto-scroll to bottom if we were at bottom before tool result was added
-            if was_at_bottom {
+            // Don't auto-scroll if user manually scrolled
+            if was_at_bottom && !app.user_scrolled {
                 let total_lines = app.calculate_total_lines();
                 app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
             }

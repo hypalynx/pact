@@ -100,8 +100,14 @@ fn main() -> std::io::Result<()> {
         terminal.draw(|f| ui::draw_app(&mut app, f))?;
 
         // Process LLM events from background thread
-        while let Ok(llm_event) = app.rx.try_recv() {
-            event::handle_llm_event(&mut app, llm_event);
+        // Limit events per frame to keep UI responsive during heavy streaming
+        const MAX_EVENTS_PER_FRAME: usize = 20;
+        for _ in 0..MAX_EVENTS_PER_FRAME {
+            if let Ok(llm_event) = app.rx.try_recv() {
+                event::handle_llm_event(&mut app, llm_event);
+            } else {
+                break;
+            }
         }
 
         // Poll for terminal events (16ms timeout for smooth UI at 60fps)
