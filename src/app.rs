@@ -180,11 +180,9 @@ impl App {
         let mode_color = modes_config.get(&mode_name).and_then(|m| m.color.clone());
 
         // Initialize database (graceful failure)
+        // Note: migrations are run earlier in main.rs, so we just need to open the DB
         let (db, db_error) = match Db::open() {
-            Ok(mut db) => match db.run_migrations() {
-                Ok(_) => (Some(db), None),
-                Err(e) => (Some(db), Some(format!("Migration error: {}", e))),
-            },
+            Ok(db) => (Some(db), None),
             Err(e) => (None, Some(format!("Database error: {}", e))),
         };
 
