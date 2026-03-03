@@ -26,6 +26,17 @@ const DEBUG_MODAL_MIN_WIDTH: u16 = 40;
 const DEBUG_MODAL_MIN_HEIGHT: u16 = 10;
 const DEBUG_FILE_PICKER_MAX_VISIBLE: usize = 8;
 
+// Dimmed color palette (used when modal is open)
+const DIM_BG: Color = Color::Rgb(20, 20, 20); // Darker background for input/message boxes
+const DIM_TEXT: Color = Color::DarkGray; // Muted text color
+const DIM_THINKING: Color = Color::Rgb(60, 60, 60); // Even darker for thinking/tool text
+const DIM_STATUS: Color = Color::Rgb(60, 60, 60); // Dark gray for status bar elements
+const DIM_MODE: Color = Color::Rgb(100, 100, 100); // Grayed out mode color
+const DIM_ERROR: Color = Color::Rgb(100, 0, 0); // Muted red for errors
+const DIM_COPYING: Color = Color::Rgb(100, 100, 0); // Muted yellow for copy notification
+const DIM_AT: Color = Color::Rgb(100, 100, 0); // Muted @mention highlight
+const DIM_SCROLLBAR: Color = Color::Rgb(40, 40, 40); // Darker scrollbar when dimmed
+
 fn parse_color(color_str: &str) -> Color {
     match color_str.to_lowercase().as_str() {
         "black" => Color::Black,
@@ -100,9 +111,21 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     app.messages_rect = messages_area;
     app.input_rect = input_area;
 
-    draw_messages(app, frame);
-    draw_input(app, frame);
-    draw_status(app, frame, status_area);
+    // Check if any modal is open (excluding small pickers which don't need dimming)
+    let is_modal_open = matches!(
+        app.panel_state,
+        crate::app::PanelState::ControlPanel | crate::app::PanelState::Debug
+    ) || app.api_key_input.is_some()
+        || app.pending_bash_confirm.is_some();
+
+    draw_messages(app, frame, is_modal_open);
+    draw_input(app, frame, is_modal_open);
+    draw_status(app, frame, status_area, is_modal_open);
+
+    // Note: We intentionally don't draw a solid overlay here.
+    // The modals (control panel, debug, etc.) have their own backgrounds
+    // that provide sufficient contrast with the main UI.
+    // A solid color overlay would hide the UI behind it completely.
 
     // Draw panels
     match app.panel_state {
@@ -136,10 +159,14 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     }
 }
 
-fn draw_messages(app: &mut App, frame: &mut Frame) {
+fn draw_messages(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
     let mut lines: Vec<Line> = Vec::new();
     let mut text_lines = Vec::new();
     let available_width = (app.messages_rect.width.saturating_sub(4)) as usize;
+
+    // Dimming colors - use darker/grayed versions when modal is open
+    let dim_text_color = if is_dimmed { DIM_TEXT } else { Color::White };
+    let dim_bg_color = if is_dimmed { DIM_BG } else { Color::Black };
 
     for msg in &app.messages {
         // Skip messages with no content (empty text and no thinking)
@@ -157,9 +184,9 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 text_lines.pop();
             }
 
-            // Add top padding with black background (but not for tool results)
+            // Add top padding with dimmed background (but not for tool results)
             if !msg.is_tool_result {
-                let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
+                let padding_line = Span::styled("".to_string(), Style::default().bg(dim_bg_color));
                 lines.push(Line::from(vec![padding_line]));
                 text_lines.push(String::new());
             }
@@ -167,10 +194,12 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
             if msg.is_tool_result {
                 // Tool results: show summary line first
                 let padded = format!("  {}  ", msg.text);
-                let style = Style::default()
-                    .fg(Color::DarkGray)
-                    .italic()
-                    .bg(Color::Black);
+                let tool_fg = if is_dimmed {
+                    DIM_THINKING
+                } else {
+                    Color::DarkGray
+                };
+                let style = Style::default().fg(tool_fg).italic().bg(dim_bg_color);
                 lines.push(Line::from(vec![Span::styled(padded, style)]));
                 text_lines.push(msg.text.clone());
 
@@ -192,7 +221,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                     // Don't use wrap_text for diffs - preserve formatting
                     if let Some(content) = &msg.tool_result_content {
                         for line_text in content.lines() {
-                            let style = Style::default().fg(Color::DarkGray).bg(Color::Black);
+                            let style = Style::default().fg(tool_fg).bg(dim_bg_color);
                             let padded = format!("  {}  ", line_text);
                             lines.push(Line::from(vec![Span::styled(padded, style)]));
                             text_lines.push(line_text.to_string());
@@ -204,7 +233,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 let wrapped = wrap_text(&msg.text, available_width);
                 for line_text in wrapped {
                     let padded = format!("  {}  ", line_text);
-                    let style = Style::default().bg(Color::Black);
+                    let style = Style::default().bg(dim_bg_color).fg(dim_text_color);
                     lines.push(Line::from(vec![Span::styled(padded, style)]));
                     text_lines.push(line_text);
                 }
@@ -213,8 +242,13 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
             // Render thinking tokens first (if present)
             if let Some(thinking) = &msg.thinking {
                 let wrapped = wrap_text(thinking, available_width);
+                let thinking_color = if is_dimmed {
+                    DIM_THINKING
+                } else {
+                    Color::DarkGray
+                };
                 for line_text in wrapped {
-                    let style = Style::default().fg(Color::DarkGray).italic();
+                    let style = Style::default().fg(thinking_color).italic();
                     let padded = format!("  {}  ", line_text);
                     lines.push(Line::from(vec![Span::styled(padded, style)]));
                     text_lines.push(line_text);
@@ -229,15 +263,25 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
             for (line_text, spans) in render_message(&msg.text, available_width) {
                 // Add padding spans around the parsed spans
                 let mut padded_spans = vec![Span::raw("  ")];
-                padded_spans.extend(spans);
+                // When dimmed, force all spans to use dark gray color
+                if is_dimmed {
+                    for span in spans {
+                        padded_spans.push(Span::styled(
+                            span.content.to_string(),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    }
+                } else {
+                    padded_spans.extend(spans);
+                }
                 padded_spans.push(Span::raw("  "));
                 lines.push(Line::from(padded_spans));
                 text_lines.push(line_text);
             }
         }
-        // Add bottom padding for user messages with black background (but not for tool results)
+        // Add bottom padding for user messages with dimmed background (but not for tool results)
         if msg.role == "user" && !msg.is_tool_result {
-            let padding_line = Span::styled("".to_string(), Style::default().bg(Color::Black));
+            let padding_line = Span::styled("".to_string(), Style::default().bg(dim_bg_color));
             lines.push(Line::from(vec![padding_line]));
         } else {
             lines.push(Line::from(""));
@@ -248,8 +292,13 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
     // Render pending thinking tokens (while streaming)
     if !app.pending_thinking.is_empty() {
         let wrapped = wrap_text(&app.pending_thinking, available_width);
+        let thinking_color = if is_dimmed {
+            DIM_THINKING
+        } else {
+            Color::DarkGray
+        };
         for line_text in wrapped {
-            let style = Style::default().fg(Color::DarkGray).italic();
+            let style = Style::default().fg(thinking_color).italic();
             let padded = format!("  {}  ", line_text);
             lines.push(Line::from(vec![Span::styled(padded, style)]));
             text_lines.push(line_text);
@@ -266,7 +315,17 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
         for (line_text, spans) in render_message(&app.pending_response, available_width) {
             // Add padding spans around the parsed spans
             let mut padded_spans = vec![Span::raw("  ")];
-            padded_spans.extend(spans);
+            // When dimmed, force all spans to use dark gray color
+            if is_dimmed {
+                for span in spans {
+                    padded_spans.push(Span::styled(
+                        span.content.to_string(),
+                        Style::default().fg(DIM_TEXT),
+                    ));
+                }
+            } else {
+                padded_spans.extend(spans);
+            }
             padded_spans.push(Span::raw("  "));
             lines.push(Line::from(padded_spans));
             text_lines.push(line_text);
@@ -358,8 +417,13 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 width: pos_width,
                 height: 1,
             };
+            let pos_color = if is_dimmed {
+                DIM_SCROLLBAR
+            } else {
+                Color::DarkGray
+            };
             frame.render_widget(
-                Paragraph::new(position_text).style(Style::default().fg(Color::DarkGray)),
+                Paragraph::new(position_text).style(Style::default().fg(pos_color)),
                 pos_area,
             );
         }
@@ -373,12 +437,18 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
         let scrollbar_pos = ((start_line as f64 / max_scroll.max(1) as f64).min(1.0)
             * scrollable_height as f64) as u16;
 
+        let scrollbar_color = if is_dimmed {
+            DIM_SCROLLBAR
+        } else {
+            Color::DarkGray
+        };
+
         let mut scrollbar_lines = Vec::new();
         for y_offset in 0..app.messages_rect.height {
             if y_offset >= scrollbar_pos && y_offset < scrollbar_pos + scrollbar_height {
                 scrollbar_lines.push(Line::from(Span::styled(
                     "█",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(scrollbar_color),
                 )));
             } else {
                 scrollbar_lines.push(Line::from(Span::raw(" ")));
@@ -395,8 +465,12 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
     }
 }
 
-fn draw_input(app: &mut App, frame: &mut Frame) {
-    let margin = Paragraph::new("").style(Style::default().bg(Color::Black));
+fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
+    // Dimmed input background when modal is open
+    let input_bg = if is_dimmed { DIM_BG } else { Color::Black };
+    let input_fg = if is_dimmed { DIM_TEXT } else { Color::White };
+
+    let margin = Paragraph::new("").style(Style::default().bg(input_bg));
     frame.render_widget(margin, app.input_rect);
 
     let inner = app.input_rect.inner(ratatui::layout::Margin {
@@ -436,13 +510,13 @@ fn draw_input(app: &mut App, frame: &mut Frame) {
 
     let mut lines: Vec<Line> = Vec::new();
     for line_text in wrapped_lines {
-        let spans = colorize_input(&line_text);
+        let spans = colorize_input(&line_text, is_dimmed);
         lines.push(Line::from(spans));
     }
 
     // Apply scroll to show the relevant portion of input
     let input = Paragraph::new(lines)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(input_bg).fg(input_fg))
         .scroll((app.input_scroll_offset as u16, 0));
     frame.render_widget(input, inner);
 
@@ -457,7 +531,10 @@ fn draw_input(app: &mut App, frame: &mut Frame) {
     }
 }
 
-fn colorize_input(input: &str) -> Vec<Span<'static>> {
+fn colorize_input(input: &str, is_dimmed: bool) -> Vec<Span<'static>> {
+    let dim_fg = if is_dimmed { DIM_TEXT } else { Color::White };
+    let dim_at = if is_dimmed { DIM_AT } else { Color::Yellow };
+
     let mut spans = Vec::new();
     let mut chars = input.chars().peekable();
     let mut current = String::new();
@@ -466,10 +543,7 @@ fn colorize_input(input: &str) -> Vec<Span<'static>> {
         if ch == '@' {
             // Push any accumulated text before the @
             if !current.is_empty() {
-                spans.push(Span::styled(
-                    current.clone(),
-                    Style::default().fg(Color::White),
-                ));
+                spans.push(Span::styled(current.clone(), Style::default().fg(dim_fg)));
                 current.clear();
             }
 
@@ -489,8 +563,8 @@ fn colorize_input(input: &str) -> Vec<Span<'static>> {
                 }
             }
 
-            // Add the @word in yellow
-            spans.push(Span::styled(word, Style::default().fg(Color::Yellow)));
+            // Add the @word in yellow (dimmed when modal is open)
+            spans.push(Span::styled(word, Style::default().fg(dim_at)));
         } else {
             current.push(ch);
         }
@@ -498,7 +572,7 @@ fn colorize_input(input: &str) -> Vec<Span<'static>> {
 
     // Push any remaining text
     if !current.is_empty() {
-        spans.push(Span::styled(current, Style::default().fg(Color::White)));
+        spans.push(Span::styled(current, Style::default().fg(dim_fg)));
     }
 
     if spans.is_empty() {
@@ -580,7 +654,28 @@ fn draw_control_panel(app: &App, frame: &mut Frame) {
     frame.render_widget(text, inner);
 }
 
-fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
+fn draw_status(app: &App, frame: &mut Frame, area: Rect, is_dimmed: bool) {
+    // Dimmed colors when modal is open
+    let normal_fg = if is_dimmed {
+        DIM_STATUS
+    } else {
+        Color::DarkGray
+    };
+    let mode_color = if is_dimmed {
+        DIM_MODE
+    } else {
+        app.mode_color
+            .as_ref()
+            .map(|c| parse_color(c))
+            .unwrap_or(Color::White)
+    };
+    let error_color = if is_dimmed { DIM_ERROR } else { Color::Red };
+    let copying_color = if is_dimmed {
+        DIM_COPYING
+    } else {
+        Color::Yellow
+    };
+
     let mut left_spans = Vec::new();
 
     // Show error notification if recent, otherwise copy notification, otherwise normal status
@@ -588,49 +683,44 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         if let Some(ref error) = app.error_message {
             left_spans.push(Span::styled(
                 error.to_string(),
-                Style::default().fg(Color::Red),
+                Style::default().fg(error_color),
             ));
         }
     } else if app.is_exit_confirming() {
         left_spans.push(Span::styled(
             "Press Ctrl+C again to exit",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(normal_fg),
         ));
     } else if app.is_cancel_confirming() {
         left_spans.push(Span::styled(
             "Press ESC again to cancel current call",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(normal_fg),
         ));
     } else if app.is_copying() {
         left_spans.push(Span::styled(
             "Copied to clipboard!",
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(copying_color),
         ));
     } else if app.was_just_cancelled() {
         left_spans.push(Span::styled(
             "Call cancelled",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(normal_fg),
         ));
     } else {
         let pwd = get_pwd_display();
         let git_branch = get_git_branch();
 
-        left_spans.push(Span::styled(pwd, Style::default().fg(Color::DarkGray)));
+        left_spans.push(Span::styled(pwd, Style::default().fg(normal_fg)));
 
         if let Some(branch) = git_branch {
             left_spans.push(Span::raw(" "));
             left_spans.push(Span::styled(
                 format!("[{}]", branch),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(normal_fg),
             ));
         }
 
         left_spans.push(Span::raw(" "));
-        let mode_color = app
-            .mode_color
-            .as_ref()
-            .map(|c| parse_color(c))
-            .unwrap_or(Color::White);
         left_spans.push(Span::styled(
             app.mode_name.clone(),
             Style::default().fg(mode_color),
@@ -682,7 +772,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         percentage,
     );
 
-    let status_style = Style::default().fg(Color::DarkGray);
+    let status_style = Style::default().fg(normal_fg);
 
     let total_width = area.width as usize;
     let left_width: usize = left_spans.iter().map(|s| s.content.len()).sum();
@@ -713,11 +803,9 @@ fn draw_file_picker(app: &App, frame: &mut Frame) {
 
         // Only draw if there's space above the input
         if app.input_rect.y >= height {
-            let title = format!("@{}", picker.query);
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_set(symbols::border::EMPTY)
-                .title(title)
                 .style(Style::default().bg(Color::Black));
 
             let inner = area.inner(ratatui::layout::Margin {
@@ -775,24 +863,9 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
 
         // Only draw if there's space above the input
         if app.input_rect.y >= height {
-            // Check if showing help menu (entries contain help text)
-            let is_help_mode = picker.filtered.iter().any(|e| e.contains(" - "));
-
-            let title = if is_help_mode {
-                "Commands".to_string()
-            } else {
-                match picker.command {
-                    crate::app::SlashCommand::Model => format!("/model {}", picker.query),
-                    crate::app::SlashCommand::Connect => "Enter API Key".to_string(),
-                    crate::app::SlashCommand::New => "New Session".to_string(),
-                    crate::app::SlashCommand::Clear => "Clear History".to_string(),
-                }
-            };
-
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_set(symbols::border::EMPTY)
-                .title(title)
                 .style(Style::default().bg(Color::Black));
 
             let inner = area.inner(ratatui::layout::Margin {

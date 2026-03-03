@@ -13,7 +13,6 @@
   increase reliability of a cli tool
 - [ ] consistent UI experience - consistent keybindings
   (i.e esc at any point to cancel even if input, esc during menu closes the menu)
-  - [x] Remove outline borders from modals (using EMPTY border set)
 - syntax highlighting in diffs, diffs should also contain
   line numbers and show the lines +/- 5 around the context
   being added/changed.
@@ -22,3 +21,15 @@
   the top/bottom of the current message input content, the latest
   message (unsent) should be preseved so you can return to
   it
+- ctrl + p to cycle through providers (like we can already in
+  the control panel
+- split up ui.rs now it's kinda large
+- also print the offset + lines provided in the Read command
+  feedback to the user/message history i.e Read X lines at
+  offset Y (last part only if offset provided and/or != 0)
+- no matches for file picker should just close the file
+  picker, i.e if you press "@ " or "@gmail.com" then the user
+  wants to type that in the message rather than still be using
+  the @ file picker.
+- only show the last 10 sessions with --resume no args, also
+  show the date time rather than just date of the session
