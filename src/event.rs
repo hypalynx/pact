@@ -96,7 +96,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             };
             app.messages.push(msg.clone());
             if let Some(db) = &app.db {
-                let _ = db.save_message(&msg);
+                let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
             }
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
             app.active_call_id = None;
@@ -198,7 +198,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                             };
                             app.messages.push(msg.clone());
                             if let Some(db) = &app.db {
-                                let _ = db.save_message(&msg);
+                                let _ =
+                                    db.save_message(&msg, &app.session_id, &app.working_directory);
                             }
                         }
 
@@ -215,7 +216,11 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                         };
                         app.messages.push(result_msg.clone());
                         if let Some(db) = &app.db {
-                            let _ = db.save_message(&result_msg);
+                            let _ = db.save_message(
+                                &result_msg,
+                                &app.session_id,
+                                &app.working_directory,
+                            );
                         }
 
                         // Send LLM result
@@ -247,7 +252,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                             };
                             app.messages.push(msg.clone());
                             if let Some(db) = &app.db {
-                                let _ = db.save_message(&msg);
+                                let _ =
+                                    db.save_message(&msg, &app.session_id, &app.working_directory);
                             }
                         }
 
@@ -292,7 +298,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                         };
                         app.messages.push(msg.clone());
                         if let Some(db) = &app.db {
-                            let _ = db.save_message(&msg);
+                            let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
                         }
                     }
 
@@ -313,7 +319,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     };
                     app.messages.push(result_msg.clone());
                     if let Some(db) = &app.db {
-                        let _ = db.save_message(&result_msg);
+                        let _ =
+                            db.save_message(&result_msg, &app.session_id, &app.working_directory);
                     }
 
                     // Send LLM result
@@ -357,29 +364,29 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 };
                 app.messages.push(msg.clone());
                 if let Some(db) = &app.db {
-                    let _ = db.save_message(&msg);
+                    let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
                 }
             }
 
-            // Execute the tool and add result
+            // Execute the tool in a background thread (don't block UI on I/O)
             let tool_call = tools::ToolCall {
                 name: name.clone(),
                 args,
             };
-            let (summary, content) = tools::execute_tool(&tool_call);
-            let result_msg = Message {
-                role: "user".to_string(),
-                text: summary,
-                is_tool_result: true,
-                thinking: None,
-                tool_result_content: Some(content),
-                tool_call_id: Some(id),
-                tool_name: Some(name),
-            };
-            app.messages.push(result_msg.clone());
-            if let Some(db) = &app.db {
-                let _ = db.save_message(&result_msg);
-            }
+            let tx = app.tx.clone();
+            let tool_name = name.clone();
+            let tool_call_id = id.clone();
+            let call_id = 0; // Tool results aren't tied to a specific LLM call_id
+            std::thread::spawn(move || {
+                let (summary, content) = tools::execute_tool(&tool_call);
+                let _ = tx.send(LlmEvent::ToolResult {
+                    tool_name,
+                    tool_call_id,
+                    summary,
+                    content,
+                    call_id,
+                });
+            });
 
             // Auto-scroll to bottom if we were at bottom before tool result was added
             // Don't auto-scroll if user manually scrolled
@@ -424,6 +431,36 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
         } => {
             app.model_name = model_name;
             app.context_window = context_window;
+        }
+        LlmEvent::ToolResult {
+            tool_name,
+            tool_call_id,
+            summary,
+            content,
+            call_id: _,
+        } => {
+            let result_msg = Message {
+                role: "user".to_string(),
+                text: summary,
+                is_tool_result: true,
+                thinking: None,
+                tool_result_content: Some(content),
+                tool_call_id: Some(tool_call_id),
+                tool_name: Some(tool_name),
+            };
+            app.messages.push(result_msg.clone());
+            if let Some(db) = &app.db {
+                let _ = db.save_message(&result_msg, &app.session_id, &app.working_directory);
+            }
+        }
+        LlmEvent::ModelsLoaded { models } => {
+            // Update the model picker with fetched models
+            if let Some(picker) = &mut app.slash_picker {
+                if picker.command == crate::app::SlashCommand::Model {
+                    picker.all_entries = models;
+                    app.slash_picker_update_filter();
+                }
+            }
         }
     }
 }
@@ -882,7 +919,7 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
                 };
                 app.messages.push(result_msg.clone());
                 if let Some(db) = &app.db {
-                    let _ = db.save_message(&result_msg);
+                    let _ = db.save_message(&result_msg, &app.session_id, &app.working_directory);
                 }
             } else {
                 // User denied - send denial message
@@ -897,7 +934,7 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
                 };
                 app.messages.push(result_msg.clone());
                 if let Some(db) = &app.db {
-                    let _ = db.save_message(&result_msg);
+                    let _ = db.save_message(&result_msg, &app.session_id, &app.working_directory);
                 }
             }
 

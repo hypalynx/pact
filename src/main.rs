@@ -15,6 +15,7 @@ use pact::app::App;
 use pact::config::Config;
 use pact::db::Db;
 use pact::{event, ui, utils};
+use pact::llm::LlmEvent;
 
 #[derive(Parser)]
 #[command(name = "pact")]
@@ -184,17 +185,20 @@ fn main() -> std::io::Result<()> {
     app.load_history_from_db();
     app.load_providers_from_db();
 
-    // Fetch server info from active provider endpoint
-    if let Some(ref provider) = app.active_provider {
-        let server_info = utils::fetch_server_info(&provider.endpoint);
-        app.context_window = server_info.context_window;
-        app.model_name = server_info.model_name;
-    } else {
-        // Fallback to default endpoint if no provider
-        let server_info = utils::fetch_server_info(DEFAULT_LOCAL_ENDPOINT);
-        app.context_window = server_info.context_window;
-        app.model_name = server_info.model_name;
-    }
+    // Fetch server info in background (don't block startup on network call)
+    let endpoint = app.active_provider
+        .as_ref()
+        .map(|p| p.endpoint.clone())
+        .unwrap_or_else(|| DEFAULT_LOCAL_ENDPOINT.to_string());
+    let tx = app.tx.clone();
+    std::thread::spawn(move || {
+        let server_info = utils::fetch_server_info(&endpoint);
+        let _ = tx.send(LlmEvent::ServerInfo {
+            model_name: server_info.model_name,
+            context_window: server_info.context_window,
+            call_id: 0,
+        });
+    });
 
     loop {
         terminal.draw(|f| ui::draw_app(&mut app, f))?;

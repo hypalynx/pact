@@ -28,6 +28,7 @@ pub struct FilePicker {
     pub selected: usize,
 }
 
+#[derive(Clone, PartialEq)]
 pub enum SlashCommand {
     Model,
     Connect,
@@ -1039,14 +1040,17 @@ impl App {
         let slash_start = self.cursor_pos.saturating_sub(1 + initial_text.len());
 
         let all_entries = match command {
-            SlashCommand::Model => self.fetch_available_models(),
+            SlashCommand::Model => {
+                // For Model, start with placeholder and fetch in background
+                vec!["Loading models...".to_string()]
+            }
             SlashCommand::Connect => vec!["Enter API key for current provider".to_string()],
             SlashCommand::New => vec!["Start a new session (clears current context)".to_string()],
             SlashCommand::Clear => vec!["Clear current session context".to_string()],
         };
 
         self.slash_picker = Some(SlashCommandPicker {
-            command,
+            command: command.clone(),
             query: initial_text.to_string(),
             slash_start,
             all_entries,
@@ -1054,32 +1058,37 @@ impl App {
             selected: 0,
         });
         self.slash_picker_update_filter();
-    }
 
-    fn fetch_available_models(&self) -> Vec<String> {
-        if let Some(provider) = &self.active_provider {
-            // First try to get models from database (populated from config)
-            if let Some(db) = &self.db
-                && let Ok(models) = db.get_provider_models(&provider.name)
-                && !models.is_empty()
-            {
-                return models;
-            }
-
-            // Otherwise try to fetch from API
-            let models = crate::utils::fetch_available_models(
-                &provider.endpoint,
-                provider.api_key.as_deref(),
-            );
-
-            if !models.is_empty() {
-                models
+        // Fetch models in background for Model command (don't block UI)
+        if command == SlashCommand::Model {
+            let tx = self.tx.clone();
+            let provider = self.active_provider.clone();
+            // Get models from DB now before spawning thread (DB can't be cloned)
+            let db_models = if let Some(provider) = &provider {
+                if let Some(db) = &self.db {
+                    db.get_provider_models(&provider.name).ok().filter(|m| !m.is_empty())
+                } else {
+                    None
+                }
             } else {
-                // Fallback for local llama.cpp server
-                vec!["local".to_string()]
-            }
-        } else {
-            vec!["local".to_string()]
+                None
+            };
+
+            std::thread::spawn(move || {
+                let models = if let Some(models) = db_models {
+                    models
+                } else if let Some(provider) = &provider {
+                    // Fetch from API if not in DB
+                    crate::utils::fetch_available_models(
+                        &provider.endpoint,
+                        provider.api_key.as_deref(),
+                    )
+                } else {
+                    Vec::new()
+                };
+
+                let _ = tx.send(LlmEvent::ModelsLoaded { models });
+            });
         }
     }
 

@@ -53,6 +53,16 @@ pub enum LlmEvent {
         context_window: usize,
         call_id: u64,
     },
+    ToolResult {
+        tool_name: String,
+        tool_call_id: String,
+        summary: String,
+        content: String,
+        call_id: u64,
+    },
+    ModelsLoaded {
+        models: Vec<String>,
+    },
 }
 
 #[allow(clippy::too_many_arguments)]

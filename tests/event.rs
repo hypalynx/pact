@@ -43,6 +43,17 @@ fn create_temp_db() -> Result<Db, rusqlite::Error> {
     Ok(db)
 }
 
+/// Process pending channel events (for tests with async tool execution)
+fn process_pending_events(app: &mut App) {
+    // Give background threads a moment to execute
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // Process all pending events from the channel
+    while let Ok(event) = app.rx.try_recv() {
+        handle_llm_event(app, event);
+    }
+}
+
 #[test]
 fn test_handle_token_event_at_bottom_auto_scrolls() {
     let mut app = create_test_app();
@@ -292,6 +303,9 @@ fn test_active_llm_calls_counter_with_tool_calls() {
         },
     );
 
+    // Process pending events from background thread
+    process_pending_events(&mut app);
+
     // Tool result message added; send_to_llm() is queued due to queue mode
     // (active_llm_calls still 1, pending_send will be true)
     assert_eq!(app.active_llm_calls, 1);
@@ -378,6 +392,9 @@ fn test_tool_call_preserves_thinking_content() {
         },
     );
 
+    // Process pending events from background thread
+    process_pending_events(&mut app);
+
     // Should have added TWO messages: assistant's thinking/response + tool result
     assert_eq!(app.messages.len(), initial_count + 2);
 
@@ -432,6 +449,9 @@ fn test_tool_call_without_pending_content() {
             call_id: 1,
         },
     );
+
+    // Process pending events from background thread
+    process_pending_events(&mut app);
 
     // Should only add ONE message (just the tool result, no empty assistant message)
     assert_eq!(app.messages.len(), initial_count + 1);

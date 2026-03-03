@@ -23,5 +23,8 @@ lint-fix:
 reset-db:
 	rm -f ~/.local/share/pact/pact.db
 
-install:
+release:
 	./release.sh
+
+install:
+	cargo install --path .

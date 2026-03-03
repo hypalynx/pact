@@ -79,7 +79,10 @@ pub fn extract_and_format_model_name(raw_name: &str) -> String {
 }
 
 pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new());
     // Trim trailing /v1 from endpoint to avoid /v1/v1/models
     // But keep /inference as it's part of Fireworks base URL
     let base = endpoint.trim_end_matches("/v1");
@@ -132,7 +135,13 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
 /// Fetch all available models from the provider's /v1/models endpoint
 /// Returns a list of model IDs that can be used for the /model command
 pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<String> {
-    let client = reqwest::blocking::Client::new();
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
     // Trim trailing /v1 from endpoint if present to avoid /v1/v1/models
     // But keep /inference as it's part of Fireworks base URL
     let base = endpoint.trim_end_matches("/v1");

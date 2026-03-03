@@ -57,7 +57,8 @@ fn test_save_and_load_message() {
         tool_name: None,
     };
 
-    db.save_message(&msg).expect("Failed to save message");
+    db.save_message(&msg, "test-session", "/tmp")
+        .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 1);
@@ -81,7 +82,8 @@ fn test_save_tool_result_message() {
         tool_name: None,
     };
 
-    db.save_message(&msg).expect("Failed to save message");
+    db.save_message(&msg, "test-session", "/tmp")
+        .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 1);
@@ -103,7 +105,8 @@ fn test_save_message_with_thinking() {
         tool_name: None,
     };
 
-    db.save_message(&msg).expect("Failed to save message");
+    db.save_message(&msg, "test-session", "/tmp")
+        .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 1);
@@ -125,7 +128,8 @@ fn test_clear_messages() {
         tool_name: None,
     };
 
-    db.save_message(&msg).expect("Failed to save message");
+    db.save_message(&msg, "test-session", "/tmp")
+        .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 1);
@@ -235,8 +239,10 @@ fn test_load_messages_ordered() {
         tool_name: None,
     };
 
-    db.save_message(&msg1).expect("Failed to save message");
-    db.save_message(&msg2).expect("Failed to save message");
+    db.save_message(&msg1, "test-session", "/tmp")
+        .expect("Failed to save message");
+    db.save_message(&msg2, "test-session", "/tmp")
+        .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");
     assert_eq!(messages.len(), 2);
@@ -364,9 +370,11 @@ fn test_multiple_messages_with_mixed_types() {
         tool_name: None,
     };
 
-    db.save_message(&user_msg).expect("Failed to save message");
-    db.save_message(&tool_msg).expect("Failed to save message");
-    db.save_message(&assistant_msg)
+    db.save_message(&user_msg, "test-session", "/tmp")
+        .expect("Failed to save message");
+    db.save_message(&tool_msg, "test-session", "/tmp")
+        .expect("Failed to save message");
+    db.save_message(&assistant_msg, "test-session", "/tmp")
         .expect("Failed to save message");
 
     let messages = db.load_messages().expect("Failed to load messages");

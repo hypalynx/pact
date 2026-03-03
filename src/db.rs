@@ -198,11 +198,16 @@ impl Db {
         Ok(())
     }
 
-    pub fn save_message(&self, msg: &crate::llm::Message) -> Result<()> {
+    pub fn save_message(
+        &self,
+        msg: &crate::llm::Message,
+        session_id: &str,
+        working_directory: &str,
+    ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, session_id, working_directory)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 now,
                 msg.role,
@@ -211,7 +216,9 @@ impl Db {
                 msg.thinking,
                 msg.tool_result_content,
                 msg.tool_call_id,
-                msg.tool_name
+                msg.tool_name,
+                session_id,
+                working_directory
             ],
         )?;
         Ok(())
