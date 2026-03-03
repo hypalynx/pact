@@ -679,6 +679,26 @@ fn handle_slash_picker_key(app: &mut App, key: KeyEvent) -> bool {
                 }
             }
         }
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            // Ctrl+W: delete word backward in the slash query
+            if let Some(picker) = &app.slash_picker {
+                let slash_start = picker.slash_start;
+                // Find the start of the current word
+                let text_before_cursor = &app.input[slash_start..app.cursor_pos];
+                if let Some(last_word_start) =
+                    text_before_cursor.rfind(|c: char| !c.is_alphanumeric())
+                {
+                    let new_pos = slash_start + last_word_start + 1;
+                    app.input.drain(new_pos..app.cursor_pos);
+                    app.cursor_pos = new_pos;
+                } else {
+                    // No word boundary found, delete to slash_start
+                    app.input.drain(slash_start..app.cursor_pos);
+                    app.cursor_pos = slash_start;
+                }
+                app.slash_picker_update_filter();
+            }
+        }
         KeyCode::Char(c) => {
             app.slash_picker_type(c);
         }

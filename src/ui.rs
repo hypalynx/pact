@@ -611,7 +611,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
             let braille = braille_frames[((app.frame_count / 3) as usize) % braille_frames.len()];
             left_spans.push(Span::styled(
                 braille.to_string(),
-                Style::default().fg(Color::Red),
+                Style::default().fg(mode_color),
             ));
         }
     }
@@ -642,22 +642,13 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         .next()
         .unwrap_or(&raw_model_id)
         .to_string();
-    let total_lines = app.rendered_line_count;
-    let max_scroll = total_lines.saturating_sub(app.messages_rect.height as usize);
-    let scroll_info = if max_scroll > 0 {
-        format!(" [{}%]", (app.scroll_offset * 100) / max_scroll)
-    } else {
-        String::new()
-    };
-
     let right_text = format!(
-        "[{}] {} | {}/{} ({}%){}",
+        "[{}] {} | {}/{} ({}%)",
         provider_name,
         model_id,
         format_tokens(tokens_used),
         format_tokens(app.context_window),
         percentage,
-        scroll_info
     );
 
     let status_style = Style::default().fg(Color::DarkGray);
