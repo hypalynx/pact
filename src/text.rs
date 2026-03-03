@@ -1,6 +1,9 @@
 use pulldown_cmark::{Event as MdEvent, Parser as MdParser, Tag};
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
+use std::sync::OnceLock;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
 
 pub fn parse_markdown_line(text: &str) -> Vec<Span<'static>> {
     let parser = MdParser::new(text);
@@ -140,4 +143,165 @@ pub fn cursor_position(input: &str, cursor_pos: usize, width: usize) -> (usize, 
     // Normal case: cursor is at end of last wrapped line
     let last_line = wrapped.last().unwrap();
     (last_line.len(), wrapped.len() - 1)
+}
+
+fn get_syntax_set() -> &'static SyntaxSet {
+    static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
+    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_nonewlines)
+}
+
+fn get_theme_set() -> &'static ThemeSet {
+    static THEME_SET: OnceLock<ThemeSet> = OnceLock::new();
+    THEME_SET.get_or_init(ThemeSet::load_defaults)
+}
+
+pub fn highlight_code_block(code: &str, language: &str) -> Vec<Vec<Span<'static>>> {
+    let syntax_set = get_syntax_set();
+    let theme_set = get_theme_set();
+    let theme = theme_set.themes.get("base16-ocean.dark").unwrap_or_else(|| {
+        theme_set
+            .themes
+            .values()
+            .next()
+            .expect("at least one theme")
+    });
+
+    let syntax = syntax_set
+        .find_syntax_by_token(language)
+        .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
+
+    let mut highlighted_lines = Vec::new();
+    let mut highlighter = syntect::easy::HighlightLines::new(syntax, theme);
+
+    for line in code.lines() {
+        let ranges = highlighter
+            .highlight_line(line, syntax_set)
+            .unwrap_or_default();
+
+        let mut spans = Vec::new();
+        for (style, text) in ranges {
+            let color = Color::Rgb(
+                style.foreground.r,
+                style.foreground.g,
+                style.foreground.b,
+            );
+            spans.push(Span::styled(text.to_string(), Style::default().fg(color)));
+        }
+        if spans.is_empty() {
+            spans.push(Span::raw(""));
+        }
+        highlighted_lines.push(spans);
+    }
+
+    highlighted_lines
+}
+
+pub fn render_message(text: &str, width: usize) -> Vec<(String, Vec<Span<'static>>)> {
+    let mut result = Vec::new();
+
+    // Find all code block ranges
+    #[derive(Clone, Copy)]
+    struct CodeBlock {
+        start: usize,
+        end: usize,
+        language: usize, // byte position of language start
+        language_len: usize,
+    }
+
+    let mut code_blocks = Vec::new();
+    let mut in_fence = false;
+    let mut fence_start = 0;
+    let mut fence_lang_start = 0;
+    let mut fence_lang_len = 0;
+
+    let bytes = text.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        // Look for fence start (``` at start of line or after newline)
+        if (i == 0 || bytes[i - 1] == b'\n') && i + 3 <= bytes.len() && &bytes[i..i + 3] == b"```" {
+            if in_fence {
+                // This closes the fence
+                code_blocks.push(CodeBlock {
+                    start: fence_start,
+                    end: i,
+                    language: fence_lang_start,
+                    language_len: fence_lang_len,
+                });
+                in_fence = false;
+                i += 3;
+            } else {
+                // This opens a fence
+                in_fence = true;
+                fence_start = i;
+                i += 3;
+
+                // Extract language identifier
+                let line_end = bytes[i..]
+                    .iter()
+                    .position(|&b| b == b'\n')
+                    .map(|p| i + p)
+                    .unwrap_or(bytes.len());
+                fence_lang_start = i;
+                fence_lang_len = line_end - i;
+                i = line_end;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    // Process text in segments (prose and code blocks)
+    let mut pos = 0;
+
+    for block in code_blocks {
+        // Process prose before the block
+        if pos < block.start {
+            let prose = &text[pos..block.start];
+            let wrapped = wrap_text(prose, width);
+            for line_text in wrapped {
+                let spans = parse_markdown_line(&line_text);
+                result.push((line_text, spans));
+            }
+        }
+
+        // Extract language tag
+        let lang_bytes = &text.as_bytes()[block.language..block.language + block.language_len];
+        let language = std::str::from_utf8(lang_bytes)
+            .unwrap_or("")
+            .trim();
+
+        // Extract code block content (skip opening ``` line and closing ``` line)
+        let fence_open_end = text[block.start..]
+            .find('\n')
+            .map(|p| block.start + p + 1)
+            .unwrap_or(block.start + 3);
+        let code_content = &text[fence_open_end..block.end];
+
+        // Highlight and preserve code block lines as-is (no word wrap)
+        let highlighted_lines = highlight_code_block(code_content, language);
+        for (idx, spans) in highlighted_lines.into_iter().enumerate() {
+            let line_text = if idx < code_content.lines().count() {
+                code_content.lines().nth(idx).unwrap_or("").to_string()
+            } else {
+                String::new()
+            };
+            result.push((line_text, spans));
+        }
+
+        // Move past the closing fence
+        pos = block.end + 3;
+    }
+
+    // Process remaining prose after last code block
+    if pos < text.len() {
+        let prose = &text[pos..];
+        let wrapped = wrap_text(prose, width);
+        for line_text in wrapped {
+            let spans = parse_markdown_line(&line_text);
+            result.push((line_text, spans));
+        }
+    }
+
+    result
 }

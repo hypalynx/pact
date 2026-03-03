@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::text::{cursor_position, parse_markdown_line, wrap_text};
+use crate::text::{cursor_position, render_message, wrap_text};
 use crate::utils::{format_tokens, get_git_branch, get_pwd_display};
 use ratatui::Frame;
 use ratatui::{
@@ -225,9 +225,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
                 }
             }
             // Render main response text
-            let wrapped = wrap_text(&msg.text, available_width);
-            for line_text in wrapped {
-                let spans = parse_markdown_line(&line_text);
+            for (line_text, spans) in render_message(&msg.text, available_width) {
                 // Add padding spans around the parsed spans
                 let mut padded_spans = vec![Span::raw("  ")];
                 padded_spans.extend(spans);
@@ -264,9 +262,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
 
     // Render pending response text
     if !app.pending_response.is_empty() {
-        let wrapped = wrap_text(&app.pending_response, available_width);
-        for line_text in wrapped {
-            let spans = parse_markdown_line(&line_text);
+        for (line_text, spans) in render_message(&app.pending_response, available_width) {
             // Add padding spans around the parsed spans
             let mut padded_spans = vec![Span::raw("  ")];
             padded_spans.extend(spans);

@@ -182,12 +182,8 @@ pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<Stri
 }
 
 pub fn db_path() -> PathBuf {
-    let mut path = dirs::data_dir().unwrap_or_else(|| {
-        let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        home.push(".local/share");
-        home
-    });
-    path.push("pact");
+    let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push(".local/share/pact");
     std::fs::create_dir_all(&path).ok();
     path.push("pact.db");
     path

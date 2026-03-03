@@ -53,12 +53,8 @@ impl Default for UiConfig {
 
 impl Config {
     fn config_path() -> PathBuf {
-        let mut path = dirs::config_dir().unwrap_or_else(|| {
-            let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-            home.push(".config");
-            home
-        });
-        path.push("pact");
+        let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push(".config/pact");
         fs::create_dir_all(&path).ok();
         path.push("pact.yaml");
         path
@@ -139,13 +135,8 @@ Press Tab to switch to Plan mode for analysis and planning."
         let global_path = if let Some(custom_path) = &self.agents_md_path {
             PathBuf::from(custom_path)
         } else {
-            let mut path = dirs::config_dir().unwrap_or_else(|| {
-                let mut home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-                home.push(".config");
-                home
-            });
-            path.push("pact");
-            path.push("AGENTS.md");
+            let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+            path.push(".config/pact/AGENTS.md");
             path
         };
 
