@@ -215,6 +215,14 @@ fn main() -> std::io::Result<()> {
             }
         }
 
+        // Drive tool→LLM continuation: send when all tools complete and LLM is idle
+        if app.active_llm_calls == 0
+            && app.pending_tool_count == 0
+            && app.messages.last().is_some_and(|m| m.is_tool_result)
+        {
+            app.send_to_llm();
+        }
+
         // Poll for terminal events (16ms timeout for smooth UI at 60fps)
         if crossterm::event::poll(Duration::from_millis(16))? {
             match crossterm::event::read()? {

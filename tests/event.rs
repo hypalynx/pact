@@ -247,10 +247,12 @@ fn test_active_llm_calls_counter_with_tool_calls() {
     // Process pending events from background thread
     process_pending_events(&mut app);
 
-    // Tool result message added; send_to_llm() is queued due to queue mode
-    // (active_llm_calls still 1, pending_send will be true)
+    // Tool result message added; pending_tool_count should be 0 (tool completed)
     assert_eq!(app.active_llm_calls, 1);
-    assert!(app.pending_send, "Next send should be queued");
+    assert_eq!(
+        app.pending_tool_count, 0,
+        "Tool count should be 0 after result arrives"
+    );
     assert!(
         app.messages.last().unwrap().is_tool_result,
         "Tool result should be added"
@@ -259,20 +261,10 @@ fn test_active_llm_calls_counter_with_tool_calls() {
     // First API call finishes (sends Done)
     handle_llm_event(&mut app, LlmEvent::Done(1));
 
-    // Counter should decrement but NOT reach 0 (second call still in progress)
-    assert_eq!(
-        app.active_llm_calls, 1,
-        "Loading should persist while second call is active"
-    );
-
-    // Second API call finishes (the queued call has call_id = 2)
-    app.pending_response = "Here's the file content...".to_string();
-    handle_llm_event(&mut app, LlmEvent::Done(2));
-
-    // Now counter reaches 0
+    // Counter should reach 0 (no more active calls)
     assert_eq!(
         app.active_llm_calls, 0,
-        "Loading should stop when all calls complete"
+        "Loading should stop when call completes"
     );
 }
 
@@ -359,9 +351,12 @@ fn test_tool_call_preserves_thinking_content() {
     assert!(app.pending_response.is_empty());
     assert!(app.pending_thinking.is_empty());
 
-    // With queue mode, new call is queued, not started yet
+    // Tool completed, pending_tool_count back to 0
     assert_eq!(app.active_llm_calls, 1);
-    assert!(app.pending_send, "Next send should be queued");
+    assert_eq!(
+        app.pending_tool_count, 0,
+        "Tool count should be 0 after result arrives"
+    );
 }
 
 #[test]
@@ -401,4 +396,21 @@ fn test_tool_call_without_pending_content() {
     let tool_msg = &app.messages[initial_count];
     assert_eq!(tool_msg.role, "user");
     assert!(tool_msg.is_tool_result);
+}
+
+#[test]
+fn test_handle_done_event_empty_response_no_message() {
+    let mut app = create_test_app();
+    app.active_llm_calls = 1;
+    // No pending content
+    app.pending_response.clear();
+    app.pending_thinking.clear();
+
+    let initial_count = app.messages.len();
+
+    handle_llm_event(&mut app, LlmEvent::Done(1));
+
+    // Should NOT create a message when there's no content
+    assert_eq!(app.messages.len(), initial_count);
+    assert_eq!(app.active_llm_calls, 0);
 }

@@ -3,6 +3,38 @@ use crate::llm::{LlmEvent, Message};
 use crate::tools;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 
+/// Save any accumulated pending_response/pending_thinking as an assistant message.
+/// Used before tool calls to preserve the LLM's text before the tool invocation.
+fn save_pending_assistant_message(app: &mut App) {
+    let text = std::mem::take(&mut app.pending_response)
+        .trim_end()
+        .to_string();
+    let thinking = if app.pending_thinking.is_empty() {
+        None
+    } else {
+        Some(
+            std::mem::take(&mut app.pending_thinking)
+                .trim_end()
+                .to_string(),
+        )
+    };
+    if !text.is_empty() || thinking.is_some() {
+        let msg = Message {
+            role: "assistant".to_string(),
+            text,
+            is_tool_result: false,
+            thinking,
+            tool_result_content: None,
+            tool_call_id: None,
+            tool_name: None,
+        };
+        app.messages.push(msg.clone());
+        if let Some(db) = &app.db {
+            let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
+        }
+    }
+}
+
 /// Handle incoming LLM events (tokens, done, errors, etc.)
 pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
     match event {
@@ -37,26 +69,24 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             }
             app.last_output_tokens = 0;
 
-            let msg = Message {
-                role: "assistant".to_string(),
-                text,
-                is_tool_result: false,
-                thinking,
-                tool_result_content: None,
-                tool_call_id: None,
-                tool_name: None,
-            };
-            app.messages.push(msg.clone());
-            if let Some(db) = &app.db {
-                let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
+            // Only create a message if there's actual content
+            if !text.is_empty() || thinking.is_some() {
+                let msg = Message {
+                    role: "assistant".to_string(),
+                    text,
+                    is_tool_result: false,
+                    thinking,
+                    tool_result_content: None,
+                    tool_call_id: None,
+                    tool_name: None,
+                };
+                app.messages.push(msg.clone());
+                if let Some(db) = &app.db {
+                    let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
+                }
             }
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
             app.active_call_id = None;
-
-            // Queue mode: if user tried to send while we were busy, send now
-            if app.pending_send {
-                app.send_to_llm();
-            }
         }
         LlmEvent::Error(e, _call_id) => {
             let text = format!("Error: {}", e);
@@ -75,11 +105,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             // Show error in status bar for 5 seconds (300 frames at 60fps)
             app.error_message = Some(format!("Error: {}", &e[..e.len().min(50)]));
             app.last_error_frame = app.frame_count;
-
-            // Queue mode: if user tried to send while we were busy, send now
-            if app.pending_send {
-                app.send_to_llm();
-            }
         }
         LlmEvent::Usage {
             input_tokens,
@@ -96,95 +121,27 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             args,
             call_id: _,
         } => {
+            // Save any pending assistant text before processing the tool call
+            save_pending_assistant_message(app);
+            app.pending_tool_count += 1;
+
             // Check if this is a Bash tool call that might be dangerous
             if name == "Bash"
                 && let Some(command) = args.get("command").and_then(|v| v.as_str())
             {
                 match tools::validate_bash_command(command) {
                     tools::ValidationResult::HardBlocked(reason) => {
-                        // Save pending response first
-                        let text = std::mem::take(&mut app.pending_response);
-                        let text = text.trim_end().to_string();
-                        let thinking = if app.pending_thinking.is_empty() {
-                            None
-                        } else {
-                            Some(
-                                std::mem::take(&mut app.pending_thinking)
-                                    .trim_end()
-                                    .to_string(),
-                            )
-                        };
-                        if !text.is_empty() || thinking.is_some() {
-                            let msg = Message {
-                                role: "assistant".to_string(),
-                                text,
-                                is_tool_result: false,
-                                thinking,
-                                tool_result_content: None,
-                                tool_call_id: None,
-                                tool_name: None,
-                            };
-                            app.messages.push(msg.clone());
-                            if let Some(db) = &app.db {
-                                let _ =
-                                    db.save_message(&msg, &app.session_id, &app.working_directory);
-                            }
-                        }
-
-                        // Push tool result message with hard block message
                         let error = format!("Command blocked for safety: {}", reason);
-                        let result_msg = Message {
-                            role: "user".to_string(),
-                            text: "Command blocked".to_string(),
-                            is_tool_result: true,
-                            thinking: None,
-                            tool_result_content: Some(error),
-                            tool_call_id: Some(id),
-                            tool_name: Some(name),
-                        };
-                        app.messages.push(result_msg.clone());
-                        if let Some(db) = &app.db {
-                            let _ = db.save_message(
-                                &result_msg,
-                                &app.session_id,
-                                &app.working_directory,
-                            );
-                        }
-
-                        // Send LLM result
-                        app.send_to_llm();
+                        let _ = app.tx.send(LlmEvent::ToolResult {
+                            tool_name: name,
+                            tool_call_id: id,
+                            summary: "Command blocked".to_string(),
+                            content: error,
+                            call_id: 0,
+                        });
                         return;
                     }
                     tools::ValidationResult::SoftBlocked(reason) => {
-                        // Save pending response first
-                        let text = std::mem::take(&mut app.pending_response);
-                        let text = text.trim_end().to_string();
-                        let thinking = if app.pending_thinking.is_empty() {
-                            None
-                        } else {
-                            Some(
-                                std::mem::take(&mut app.pending_thinking)
-                                    .trim_end()
-                                    .to_string(),
-                            )
-                        };
-                        if !text.is_empty() || thinking.is_some() {
-                            let msg = Message {
-                                role: "assistant".to_string(),
-                                text,
-                                is_tool_result: false,
-                                thinking,
-                                tool_result_content: None,
-                                tool_call_id: None,
-                                tool_name: None,
-                            };
-                            app.messages.push(msg.clone());
-                            if let Some(db) = &app.db {
-                                let _ =
-                                    db.save_message(&msg, &app.session_id, &app.working_directory);
-                            }
-                        }
-
                         // Pause and wait for user confirmation
                         app.pending_bash_confirm = Some(crate::app::PendingBashConfirm {
                             tool_id: id,
@@ -202,88 +159,19 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if app.mode_name == "plan" && (name == "Write" || name == "Edit") {
                 let path = args.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
                 if !path.ends_with(".md") {
-                    // Save pending response first
-                    let text = std::mem::take(&mut app.pending_response);
-                    let text = text.trim_end().to_string();
-                    let thinking = if app.pending_thinking.is_empty() {
-                        None
-                    } else {
-                        Some(
-                            std::mem::take(&mut app.pending_thinking)
-                                .trim_end()
-                                .to_string(),
-                        )
-                    };
-                    if !text.is_empty() || thinking.is_some() {
-                        let msg = Message {
-                            role: "assistant".to_string(),
-                            text,
-                            is_tool_result: false,
-                            thinking,
-                            tool_result_content: None,
-                            tool_call_id: None,
-                            tool_name: None,
-                        };
-                        app.messages.push(msg.clone());
-                        if let Some(db) = &app.db {
-                            let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
-                        }
-                    }
-
-                    // Push tool result message with plan mode block message
                     let error = format!(
                         "Blocked in plan mode: {} is only allowed for .md files. \
                          To modify source code, the user must press Tab to switch to build mode.",
                         name
                     );
-                    let result_msg = Message {
-                        role: "user".to_string(),
-                        text: "Tool blocked".to_string(),
-                        is_tool_result: true,
-                        thinking: None,
-                        tool_result_content: Some(error),
-                        tool_call_id: Some(id),
-                        tool_name: Some(name),
-                    };
-                    app.messages.push(result_msg.clone());
-                    if let Some(db) = &app.db {
-                        let _ =
-                            db.save_message(&result_msg, &app.session_id, &app.working_directory);
-                    }
-
-                    // Send LLM result
-                    app.send_to_llm();
+                    let _ = app.tx.send(LlmEvent::ToolResult {
+                        tool_name: name,
+                        tool_call_id: id,
+                        summary: "Tool blocked".to_string(),
+                        content: error,
+                        call_id: 0,
+                    });
                     return;
-                }
-            }
-
-            // First, save any pending thinking/response as an assistant message
-            // This preserves the LLM's thought process before the tool call
-            // Trim trailing newlines to avoid gaps where the <tool_call> was stripped
-            let text = std::mem::take(&mut app.pending_response);
-            let text = text.trim_end().to_string();
-            let thinking = if app.pending_thinking.is_empty() {
-                None
-            } else {
-                Some(
-                    std::mem::take(&mut app.pending_thinking)
-                        .trim_end()
-                        .to_string(),
-                )
-            };
-            if !text.is_empty() || thinking.is_some() {
-                let msg = Message {
-                    role: "assistant".to_string(),
-                    text,
-                    is_tool_result: false,
-                    thinking,
-                    tool_result_content: None,
-                    tool_call_id: None,
-                    tool_name: None,
-                };
-                app.messages.push(msg.clone());
-                if let Some(db) = &app.db {
-                    let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
                 }
             }
 
@@ -295,7 +183,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             let tx = app.tx.clone();
             let tool_name = name.clone();
             let tool_call_id = id.clone();
-            let call_id = 0; // Tool results aren't tied to a specific LLM call_id
             std::thread::spawn(move || {
                 let (summary, content) = tools::execute_tool(&tool_call);
                 let _ = tx.send(LlmEvent::ToolResult {
@@ -303,11 +190,9 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     tool_call_id,
                     summary,
                     content,
-                    call_id,
+                    call_id: 0,
                 });
             });
-
-            app.send_to_llm();
         }
 
         LlmEvent::ApiLog {
@@ -364,6 +249,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             if let Some(db) = &app.db {
                 let _ = db.save_message(&result_msg, &app.session_id, &app.working_directory);
             }
+            app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
         }
         LlmEvent::ModelsLoaded { models } => {
             // Update the model picker with fetched models
@@ -843,7 +729,7 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
                 }
             }
 
-            app.send_to_llm();
+            app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
         }
         return true;
     }

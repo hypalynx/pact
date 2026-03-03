@@ -150,10 +150,10 @@ pub struct App {
     // API key input mode
     pub api_key_input: Option<String>, // When Some, we're in API key input mode
 
-    // Call tracking for queue mode
+    // Call tracking
     pub call_counter: u64,
     pub active_call_id: Option<u64>,
-    pub pending_send: bool,
+    pub pending_tool_count: usize,
 
     // Pending bash confirmation
     pub pending_bash_confirm: Option<PendingBashConfirm>,
@@ -246,7 +246,7 @@ impl App {
             api_key_input: None,
             call_counter: 0,
             active_call_id: None,
-            pending_send: false,
+            pending_tool_count: 0,
             pending_bash_confirm: None,
             session_id,
             working_directory,
@@ -344,13 +344,11 @@ impl App {
     }
 
     pub fn send_to_llm(&mut self) {
-        // Queue mode: reject if call already active
+        // Safety net: reject if call already active
         if self.active_llm_calls > 0 {
-            self.pending_send = true;
             return;
         }
 
-        self.pending_send = false;
         self.active_llm_calls += 1;
         self.pending_response.clear();
         self.pending_thinking.clear();
