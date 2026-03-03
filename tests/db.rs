@@ -429,3 +429,155 @@ fn test_db_open() {
     // Just verify it doesn't fail
     assert!(db.conn.execute_batch("SELECT 1;").is_ok());
 }
+
+#[test]
+fn test_get_sessions_for_directory_returns_sessions_with_messages() {
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
+
+    // Create two sessions in the same working directory
+    db.create_session("session-1", "/tmp", Some("first prompt"))
+        .expect("Failed to create session 1");
+    db.create_session("session-2", "/tmp", Some("second prompt"))
+        .expect("Failed to create session 2");
+
+    // Initially, no sessions should be returned (no messages yet)
+    let sessions = db
+        .get_sessions_for_directory("/tmp", 10)
+        .expect("Failed to get sessions");
+    assert_eq!(sessions.len(), 0);
+
+    // Save a message to session-1
+    let msg = Message {
+        role: "user".to_string(),
+        text: "Hello".to_string(),
+        is_tool_result: false,
+        thinking: None,
+        tool_result_content: None,
+        tool_call_id: None,
+        tool_name: None,
+        tool_calls: None,
+    };
+    db.save_message(&msg, "session-1", "/tmp")
+        .expect("Failed to save message");
+
+    // Now session-1 should appear in the list with 1 message
+    let sessions = db
+        .get_sessions_for_directory("/tmp", 10)
+        .expect("Failed to get sessions");
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].session_id, "session-1");
+    assert_eq!(sessions[0].message_count, 1);
+    assert_eq!(sessions[0].first_prompt, Some("first prompt".to_string()));
+
+    // Save another message to session-1
+    let msg2 = Message {
+        role: "assistant".to_string(),
+        text: "Hi there".to_string(),
+        is_tool_result: false,
+        thinking: None,
+        tool_result_content: None,
+        tool_call_id: None,
+        tool_name: None,
+        tool_calls: None,
+    };
+    db.save_message(&msg2, "session-1", "/tmp")
+        .expect("Failed to save message 2");
+
+    // Save a message to session-2
+    let msg3 = Message {
+        role: "user".to_string(),
+        text: "Another session".to_string(),
+        is_tool_result: false,
+        thinking: None,
+        tool_result_content: None,
+        tool_call_id: None,
+        tool_name: None,
+        tool_calls: None,
+    };
+    db.save_message(&msg3, "session-2", "/tmp")
+        .expect("Failed to save message 3");
+
+    // Both sessions should now appear, ordered by id DESC (most recent first)
+    let sessions = db
+        .get_sessions_for_directory("/tmp", 10)
+        .expect("Failed to get sessions");
+    assert_eq!(sessions.len(), 2);
+    // session-2 was created second, so it should be first (higher id)
+    assert_eq!(sessions[0].session_id, "session-2");
+    assert_eq!(sessions[0].message_count, 1);
+    assert_eq!(sessions[1].session_id, "session-1");
+    assert_eq!(sessions[1].message_count, 2);
+}
+
+#[test]
+fn test_get_sessions_for_directory_limit() {
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
+
+    // Create 3 sessions with messages
+    for i in 0..3 {
+        let session_id = format!("session-{}", i);
+        db.create_session(&session_id, "/tmp", None)
+            .expect("Failed to create session");
+        let msg = Message {
+            role: "user".to_string(),
+            text: format!("Message {}", i),
+            is_tool_result: false,
+            thinking: None,
+            tool_result_content: None,
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls: None,
+        };
+        db.save_message(&msg, &session_id, "/tmp")
+            .expect("Failed to save message");
+    }
+
+    // Get only 2 sessions
+    let sessions = db
+        .get_sessions_for_directory("/tmp", 2)
+        .expect("Failed to get sessions");
+    assert_eq!(sessions.len(), 2);
+}
+
+#[test]
+fn test_get_sessions_for_directory_different_working_dirs() {
+    let mut db = create_temp_db();
+    db.run_migrations().expect("Failed to init schema");
+
+    // Create sessions in different directories
+    db.create_session("session-a", "/home/user/project1", None)
+        .expect("Failed to create session");
+    db.create_session("session-b", "/home/user/project2", None)
+        .expect("Failed to create session");
+
+    // Add messages to both
+    let msg = Message {
+        role: "user".to_string(),
+        text: "Hello".to_string(),
+        is_tool_result: false,
+        thinking: None,
+        tool_result_content: None,
+        tool_call_id: None,
+        tool_name: None,
+        tool_calls: None,
+    };
+    db.save_message(&msg, "session-a", "/home/user/project1")
+        .expect("Failed to save message");
+    db.save_message(&msg, "session-b", "/home/user/project2")
+        .expect("Failed to save message");
+
+    // Query each directory separately
+    let sessions1 = db
+        .get_sessions_for_directory("/home/user/project1", 10)
+        .expect("Failed to get sessions");
+    assert_eq!(sessions1.len(), 1);
+    assert_eq!(sessions1[0].session_id, "session-a");
+
+    let sessions2 = db
+        .get_sessions_for_directory("/home/user/project2", 10)
+        .expect("Failed to get sessions");
+    assert_eq!(sessions2.len(), 1);
+    assert_eq!(sessions2[0].session_id, "session-b");
+}

@@ -91,7 +91,7 @@ You can:
 - Write and edit markdown files (.md) for plans and notes
 
 You CANNOT write or edit non-markdown files in this mode.
-If you need to implement code, tell the user to press Tab to switch to Build mode.
+If you need to implement code, tell the user to switch to Build mode (you cannot do this yourself).
 
 Focus on: understanding the codebase, designing solutions, writing clear plans."
                         .to_string(),

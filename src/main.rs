@@ -66,7 +66,7 @@ fn get_working_dir() -> String {
 
 #[allow(clippy::print_stdout, clippy::print_stderr)]
 fn list_available_sessions(db: &Db, working_dir: &str) -> std::io::Result<()> {
-    match db.get_sessions_for_directory(working_dir) {
+    match db.get_sessions_for_directory(working_dir, 10) {
         Ok(sessions) if sessions.is_empty() => {
             println!("No sessions found in {}", working_dir);
             println!("Run `pact` to start a new session.");
@@ -82,11 +82,15 @@ fn list_available_sessions(db: &Db, working_dir: &str) -> std::io::Result<()> {
                 let count = db
                     .get_session_message_count(&session.session_id)
                     .unwrap_or(0);
+                // Format datetime nicely: "2025-01-15 14:30:45" (truncate to seconds)
                 let time = session
                     .created_at
-                    .split('T')
+                    .trim_end_matches('Z')
+                    .replace("T", " ")
+                    .split('.')
                     .next()
-                    .unwrap_or(&session.created_at);
+                    .unwrap_or(&session.created_at)
+                    .to_string();
                 println!(
                     "  {}: \"{}\" ({} msgs, {})",
                     session.session_id, preview, count, time
@@ -220,6 +224,12 @@ fn main() -> std::io::Result<()> {
             && app.pending_tool_count == 0
             && app.messages.last().is_some_and(|m| m.is_tool_result)
         {
+            app.send_to_llm();
+        }
+
+        // Retry on invalid tool call after error message is saved
+        if app.needs_retry && app.active_llm_calls == 0 && app.pending_tool_count == 0 {
+            app.needs_retry = false;
             app.send_to_llm();
         }
 

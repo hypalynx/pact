@@ -162,6 +162,9 @@ pub struct App {
     // Session management
     pub session_id: String,
     pub working_directory: String,
+
+    // Retry handling for invalid tool calls
+    pub needs_retry: bool,
 }
 
 impl App {
@@ -252,6 +255,7 @@ impl App {
             pending_bash_confirm: None,
             session_id,
             working_directory,
+            needs_retry: false,
         }
     }
 

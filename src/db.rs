@@ -323,8 +323,8 @@ impl Db {
     ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO sessions (session_id, created_at, working_directory, first_prompt, message_count)
-             VALUES (?1, ?2, ?3, ?4, 0)
+            "INSERT INTO sessions (session_id, created_at, working_directory, first_prompt)
+             VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(session_id) DO UPDATE SET 
                 working_directory = excluded.working_directory,
                 first_prompt = COALESCE(excluded.first_prompt, first_prompt)",
@@ -333,13 +333,21 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_sessions_for_directory(&self, working_directory: &str) -> Result<Vec<Session>> {
+    pub fn get_sessions_for_directory(
+        &self,
+        working_directory: &str,
+        limit: usize,
+    ) -> Result<Vec<Session>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, created_at, working_directory, first_prompt, message_count
-             FROM sessions WHERE working_directory = ?1 ORDER BY id DESC",
+            "SELECT s.id, s.session_id, s.created_at, s.working_directory, s.first_prompt,
+                    (SELECT COUNT(*) FROM messages WHERE session_id = s.session_id) as message_count
+             FROM sessions s
+             WHERE s.working_directory = ?1 
+             AND EXISTS (SELECT 1 FROM messages WHERE session_id = s.session_id)
+             ORDER BY s.id DESC LIMIT ?2",
         )?;
 
-        let sessions = stmt.query_map([working_directory], |row| {
+        let sessions = stmt.query_map(params![working_directory, limit as i64], |row| {
             Ok(Session {
                 id: row.get(0)?,
                 session_id: row.get(1)?,
@@ -389,15 +397,6 @@ impl Db {
         self.conn.execute(
             "UPDATE sessions SET first_prompt = ?1 WHERE session_id = ?2",
             params![first_prompt, session_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn update_session_message_count(&self, session_id: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE sessions SET message_count = (SELECT COUNT(*) FROM messages WHERE session_id = ?1)
-             WHERE session_id = ?1",
-            [session_id],
         )?;
         Ok(())
     }

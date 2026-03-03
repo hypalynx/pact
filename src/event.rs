@@ -183,7 +183,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 if !path.ends_with(".md") {
                     let error = format!(
                         "Blocked in plan mode: {} is only allowed for .md files. \
-                         To modify source code, the user must press Tab to switch to build mode.",
+                         To modify source code, the user must switch to build mode (you cannot do this).",
                         name
                     );
                     let _ = app.tx.send(LlmEvent::ToolResult {
@@ -273,6 +273,51 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 let _ = db.save_message(&result_msg, &app.session_id, &app.working_directory);
             }
             app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
+        }
+        LlmEvent::InvalidToolCall { raw: _, call_id: _ } => {
+            // Flush pending response and thinking into an assistant message
+            let text = std::mem::take(&mut app.pending_response);
+            let thinking = if app.pending_thinking.is_empty() {
+                None
+            } else {
+                Some(std::mem::take(&mut app.pending_thinking))
+            };
+
+            if !text.is_empty() || thinking.is_some() {
+                let msg = Message {
+                    role: "assistant".to_string(),
+                    text,
+                    is_tool_result: false,
+                    thinking,
+                    tool_result_content: None,
+                    tool_call_id: None,
+                    tool_name: None,
+                    tool_calls: None,
+                };
+                app.messages.push(msg.clone());
+                if let Some(db) = &app.db {
+                    let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
+                }
+            }
+
+            // Push a user message with error feedback
+            let error_msg = Message {
+                role: "user".to_string(),
+                text: "Your tool call could not be parsed. Please use proper JSON format:\n{\"type\": \"function\", \"function\": {\"name\": \"...\", \"arguments\": {...}}}".to_string(),
+                is_tool_result: false,
+                thinking: None,
+                tool_result_content: None,
+                tool_call_id: None,
+                tool_name: None,
+                tool_calls: None,
+            };
+            app.messages.push(error_msg.clone());
+            if let Some(db) = &app.db {
+                let _ = db.save_message(&error_msg, &app.session_id, &app.working_directory);
+            }
+
+            // Mark that we need to retry
+            app.needs_retry = true;
         }
         LlmEvent::ModelsLoaded { models } => {
             // Update the model picker with fetched models

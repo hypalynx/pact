@@ -47,6 +47,10 @@ pub enum LlmEvent {
         args: serde_json::Map<String, serde_json::Value>,
         call_id: u64,
     },
+    InvalidToolCall {
+        raw: String,
+        call_id: u64,
+    },
     ApiLog {
         request_body: String,
         response_body: Option<String>,
@@ -72,6 +76,45 @@ pub enum LlmEvent {
     ModelsLoaded {
         models: Vec<String>,
     },
+}
+
+/// Parse Qwen XML tool call format: <tool_call><function=NAME><parameter=KEY>VALUE</parameter></function></tool_call>
+fn parse_qwen_xml_tool_call(
+    raw: &str,
+) -> Option<(String, String, serde_json::Map<String, serde_json::Value>)> {
+    // Extract function name from <function=NAME>
+    let func_start = raw.find("<function=")?;
+    let func_end = raw[func_start + 10..].find('>')?;
+    let name = raw[func_start + 10..func_start + 10 + func_end].to_string();
+
+    let mut args = serde_json::Map::new();
+    let mut remaining = raw;
+
+    // Extract all <parameter=KEY>VALUE</parameter> patterns
+    while let Some(param_start) = remaining.find("<parameter=") {
+        let after_param = &remaining[param_start + 11..];
+        let key_end = after_param.find('>')?;
+        let key = after_param[..key_end].to_string();
+
+        let value_start = param_start + 11 + key_end + 1;
+        let value_end = remaining[value_start..].find("</parameter>")?;
+        let value = remaining[value_start..value_start + value_end].to_string();
+
+        // Try to parse value as JSON, otherwise use as string
+        let json_value = serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+        args.insert(key, json_value);
+
+        remaining = &remaining[value_start + value_end + 12..];
+    }
+
+    // Use a static ID for Qwen XML tool calls
+    let id = "qwen_xml_tool_call".to_string();
+
+    if args.is_empty() {
+        None
+    } else {
+        Some((id, name, args))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -269,6 +312,7 @@ pub fn call_llm(
         arguments: String,
     }
     let mut partial_tool_call: Option<PartialToolCall> = None;
+    let mut partial_xml: Option<String> = None;
 
     let reader = BufReader::new(response);
 
@@ -301,61 +345,95 @@ pub fn call_llm(
                 .and_then(|d| d.get("content"))
                 .and_then(|t| t.as_str())
             {
-                // Check if this contains a tool call (for Qwen and text-format models)
+                // Handle XML tool call accumulation across deltas
                 if delta.contains("<tool_call>") {
-                    // Parse tool call from text format
-                    if let Some(tool_json_start) = delta.find('{')
-                        && let Some(tool_json_end) = delta.rfind('}')
-                    {
-                        let tool_json_str = &delta[tool_json_start..=tool_json_end];
-                        if let Ok(tool_json) =
-                            serde_json::from_str::<serde_json::Value>(tool_json_str)
-                        {
-                            accumulated_tool_calls.push(tool_json.clone());
-                            let id = tool_json
-                                .get("id")
-                                .and_then(|i| i.as_str())
-                                .unwrap_or("text_tool_call")
-                                .to_string();
-                            let mut name = tool_json
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            let mut args = serde_json::Map::new();
+                    partial_xml = Some(partial_xml.unwrap_or_default() + delta);
+                } else if let Some(ref mut xml) = partial_xml {
+                    xml.push_str(delta);
+                }
 
-                            // Handle arguments - normalize parameter names to filePath
-                            if let Some(arguments) =
-                                tool_json.get("arguments").and_then(|a| a.as_object())
+                // Check if XML block is complete
+                if let Some(xml) = &partial_xml {
+                    if xml.contains("</tool_call>") {
+                        let xml_block = partial_xml.take().unwrap();
+
+                        // Try JSON format first (standard tool calls with embedded JSON)
+                        let mut tool_call_found = false;
+                        if let Some(tool_json_start) = xml_block.find('{')
+                            && let Some(tool_json_end) = xml_block.rfind('}')
+                        {
+                            let tool_json_str = &xml_block[tool_json_start..=tool_json_end];
+                            if let Ok(tool_json) =
+                                serde_json::from_str::<serde_json::Value>(tool_json_str)
                             {
-                                for (key, value) in arguments {
-                                    if key == "path" || key == "file" || key == "filePath" {
-                                        // Normalize file parameter to filePath
-                                        args.insert("filePath".to_string(), value.clone());
-                                    } else {
-                                        args.insert(key.clone(), value.clone());
+                                accumulated_tool_calls.push(tool_json.clone());
+                                let id = tool_json
+                                    .get("id")
+                                    .and_then(|i| i.as_str())
+                                    .unwrap_or("text_tool_call")
+                                    .to_string();
+                                let mut name = tool_json
+                                    .get("name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let mut args = serde_json::Map::new();
+
+                                // Handle arguments - normalize parameter names to filePath
+                                if let Some(arguments) =
+                                    tool_json.get("arguments").and_then(|a| a.as_object())
+                                {
+                                    for (key, value) in arguments {
+                                        if key == "path" || key == "file" || key == "filePath" {
+                                            args.insert("filePath".to_string(), value.clone());
+                                        } else {
+                                            args.insert(key.clone(), value.clone());
+                                        }
                                     }
                                 }
-                            }
 
-                            // If name is empty but we have filePath arg, infer it's a "read" tool
-                            if name.is_empty() && args.contains_key("filePath") {
-                                name = "read".to_string();
-                            }
+                                // If name is empty but we have filePath arg, infer it's a "read" tool
+                                if name.is_empty() && args.contains_key("filePath") {
+                                    name = "read".to_string();
+                                }
 
-                            if !name.is_empty() && !args.is_empty() {
-                                let _ = tx.send(LlmEvent::ToolCall {
-                                    id,
-                                    name,
-                                    args,
-                                    call_id,
-                                });
+                                if !name.is_empty() && !args.is_empty() {
+                                    let _ = tx.send(LlmEvent::ToolCall {
+                                        id,
+                                        name,
+                                        args,
+                                        call_id,
+                                    });
+                                    tool_call_found = true;
+                                }
                             }
                         }
+
+                        // If JSON parsing failed, try Qwen XML format
+                        if !tool_call_found
+                            && let Some((id, name, args)) = parse_qwen_xml_tool_call(&xml_block)
+                        {
+                            let _ = tx.send(LlmEvent::ToolCall {
+                                id,
+                                name,
+                                args,
+                                call_id,
+                            });
+                            tool_call_found = true;
+                        }
+
+                        // If both parsers failed, emit InvalidToolCall event and the raw text as a token
+                        if !tool_call_found {
+                            let _ = tx.send(LlmEvent::InvalidToolCall {
+                                raw: xml_block.clone(),
+                                call_id,
+                            });
+                            accumulated_text.push_str(&xml_block);
+                            let _ = tx.send(LlmEvent::Token(xml_block, call_id));
+                        }
                     }
-                    // Don't send the <tool_call> block as a token
-                } else {
-                    // Regular text token
+                } else if !delta.contains("<tool_call>") && !delta.contains("</tool_call>") {
+                    // Regular text token (not part of XML block)
                     accumulated_text.push_str(delta);
                     let _ = tx.send(LlmEvent::Token(delta.to_string(), call_id));
                 }
