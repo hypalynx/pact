@@ -55,7 +55,7 @@ fn process_pending_events(app: &mut App) {
 }
 
 #[test]
-fn test_handle_token_event_at_bottom_auto_scrolls() {
+fn test_handle_token_event_adds_content() {
     let mut app = create_test_app();
     app.messages_rect = Rect {
         x: 0,
@@ -64,28 +64,20 @@ fn test_handle_token_event_at_bottom_auto_scrolls() {
         height: 10,
     };
 
-    // Set up: add a message and position at bottom
+    // Set up: add initial content
     app.pending_response = "Initial message\n".to_string();
-    let initial_lines = app.calculate_total_lines();
-    app.scroll_offset = initial_lines.saturating_sub(10);
-
-    // Verify we're at bottom before token arrives
-    let (was_at_bottom, _) = app.calculate_scroll_info();
-    assert!(was_at_bottom);
 
     // Send a token event
     handle_llm_event(&mut app, LlmEvent::Token("new text ".to_string(), 1));
 
     // Should have updated content
     assert!(app.pending_response.contains("new text"));
-
-    // Scroll offset should have increased to keep us at bottom
-    let (still_at_bottom, _) = app.calculate_scroll_info();
-    assert!(still_at_bottom);
+    // auto_scroll should not be modified by token events
+    assert!(app.auto_scroll);
 }
 
 #[test]
-fn test_handle_token_event_not_at_bottom_no_auto_scroll() {
+fn test_handle_token_event_preserves_auto_scroll_state() {
     let mut app = create_test_app();
     app.messages_rect = Rect {
         x: 0,
@@ -94,36 +86,22 @@ fn test_handle_token_event_not_at_bottom_no_auto_scroll() {
         height: 10,
     };
 
-    // Add enough messages to have room to scroll
-    for i in 0..10 {
-        app.pending_response.push_str(&format!("Message {}\n", i));
-    }
-
-    // Position at bottom first
-    let total_lines = app.calculate_total_lines();
-    app.scroll_offset = total_lines.saturating_sub(10);
-
-    // Verify we're at bottom
-    let (at_bottom, _) = app.calculate_scroll_info();
-    assert!(at_bottom);
-
-    // Now scroll up (away from bottom)
+    // User scrolled up, disabling auto_scroll
     app.scroll_up();
+    assert!(!app.auto_scroll);
     let saved_offset = app.scroll_offset;
-
-    // Verify we're NO longer at bottom
-    let (still_at_bottom, _) = app.calculate_scroll_info();
-    assert!(!still_at_bottom);
 
     // Send a token event
     handle_llm_event(&mut app, LlmEvent::Token("new text ".to_string(), 1));
 
-    // When not at bottom, scroll position should not change (don't auto-scroll)
+    // auto_scroll should remain false (event handlers don't touch scroll)
+    assert!(!app.auto_scroll);
+    // scroll_offset should not change
     assert_eq!(app.scroll_offset, saved_offset);
 }
 
 #[test]
-fn test_handle_token_event_startup_unsized_viewport_auto_scrolls() {
+fn test_handle_token_event_startup_unsized_viewport() {
     let mut app = create_test_app();
 
     // Viewport not sized yet (height = 0, simulates startup)
@@ -134,22 +112,8 @@ fn test_handle_token_event_startup_unsized_viewport_auto_scrolls() {
     handle_llm_event(&mut app, LlmEvent::Token("first ".to_string(), 1));
     assert_eq!(app.pending_response, "first ");
 
-    // Size the viewport
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
-
-    // Verify we're at bottom (scroll_offset adjusted for content)
-    let (at_bottom, _) = app.calculate_scroll_info();
-    assert!(at_bottom);
-
-    // More tokens should keep us at bottom
-    handle_llm_event(&mut app, LlmEvent::Token("second ".to_string(), 1));
-    let (still_at_bottom, _) = app.calculate_scroll_info();
-    assert!(still_at_bottom);
+    // auto_scroll should still be true (renderer will handle positioning)
+    assert!(app.auto_scroll);
 }
 
 #[test]
@@ -193,7 +157,7 @@ fn test_handle_done_event_creates_message() {
 }
 
 #[test]
-fn test_handle_done_event_not_at_bottom_no_auto_scroll() {
+fn test_handle_done_event_does_not_modify_scroll() {
     let mut app = create_test_app();
     app.messages_rect = Rect {
         x: 0,
@@ -202,40 +166,17 @@ fn test_handle_done_event_not_at_bottom_no_auto_scroll() {
         height: 10,
     };
 
-    // Add enough messages to have room to scroll
-    for i in 0..10 {
-        app.messages.push(pact::llm::Message {
-            role: "assistant".to_string(),
-            text: format!("Message {}\nLine 2\nLine 3\n", i),
-            is_tool_result: false,
-            thinking: None,
-            tool_result_content: None,
-            tool_call_id: None,
-            tool_name: None,
-        });
-    }
-
-    // Position at bottom first
-    let total_lines = app.calculate_total_lines();
-    app.scroll_offset = total_lines.saturating_sub(10);
-
-    // Verify we're at bottom
-    let (at_bottom, _) = app.calculate_scroll_info();
-    assert!(at_bottom);
-
-    // Now scroll up (away from bottom)
+    // User scrolled up, disabling auto_scroll
     app.scroll_up();
+    assert!(!app.auto_scroll);
     let saved_offset = app.scroll_offset;
-
-    // Verify we're NO longer at bottom
-    let (still_at_bottom, _) = app.calculate_scroll_info();
-    assert!(!still_at_bottom);
 
     // Send a Done event with a multi-line message
     app.pending_response = "New assistant response\nLine 2\nLine 3".to_string();
     handle_llm_event(&mut app, LlmEvent::Done(1));
 
-    // When not at bottom, scroll position should not change (don't auto-scroll to new bottom)
+    // Event handler should not modify scroll state — renderer handles that
+    assert!(!app.auto_scroll);
     assert_eq!(app.scroll_offset, saved_offset);
 }
 

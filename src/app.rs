@@ -1,6 +1,5 @@
 use crate::db::Db;
 use crate::llm::{LlmEvent, Message};
-use crate::text::wrap_text;
 use indexmap::IndexMap;
 use ratatui::layout::Rect;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -102,8 +101,8 @@ pub struct App {
     pub pending_thinking: String,
     pub debug: bool,
     pub scroll_offset: usize,
-    pub user_scrolled: bool,
-    pub was_at_bottom: bool,
+    pub auto_scroll: bool,
+    pub rendered_line_count: usize,
     pub dragging_scrollbar: bool,
     pub mode_name: String,
     pub available_modes: Vec<String>,
@@ -203,8 +202,8 @@ impl App {
             pending_thinking: String::new(),
             debug,
             scroll_offset: 0,
-            user_scrolled: false,
-            was_at_bottom: true,
+            auto_scroll: true,
+            rendered_line_count: 0,
             dragging_scrollbar: false,
             mode_name,
             available_modes,
@@ -328,6 +327,7 @@ impl App {
         }
         self.input = String::new();
         self.cursor_pos = 0;
+        self.auto_scroll = true;
         self.send_to_llm();
     }
 
@@ -354,7 +354,6 @@ impl App {
         self.active_llm_calls += 1;
         self.pending_response.clear();
         self.pending_thinking.clear();
-        self.user_scrolled = false;
 
         // Generate call ID
         let call_id = self.call_counter;
@@ -446,92 +445,23 @@ impl App {
         self.cursor_pos = self.input.len();
     }
 
-    pub fn calculate_total_lines(&self) -> usize {
-        let mut total_lines = 0;
-        let available_width = (self.messages_rect.width.saturating_sub(4)) as usize;
-
-        for msg in &self.messages {
-            if msg.role == "user" {
-                // User messages have top and bottom padding lines
-                total_lines += 1; // top padding
-                if msg.is_tool_result {
-                    total_lines += 1; // tool result summary line
-                    // Add lines from tool result content (diff, output, etc.)
-                    if let Some(content) = &msg.tool_result_content {
-                        total_lines += content.lines().count();
-                    }
-                } else {
-                    let wrapped = wrap_text(&msg.text, available_width);
-                    total_lines += wrapped.len();
-                }
-                total_lines += 1; // bottom padding
-            } else {
-                // Assistant messages
-                // Account for thinking tokens (if present)
-                if let Some(thinking) = &msg.thinking {
-                    let wrapped = wrap_text(thinking, available_width);
-                    total_lines += wrapped.len();
-                    // Blank line between thinking and response (only if response exists)
-                    if !msg.text.is_empty() {
-                        total_lines += 1;
-                    }
-                }
-                // Account for message text
-                let wrapped = wrap_text(&msg.text, available_width);
-                total_lines += wrapped.len() + 1; // +1 for blank line after message
-            }
-        }
-
-        // Account for pending thinking tokens (if streaming)
-        if !self.pending_thinking.is_empty() {
-            let wrapped = wrap_text(&self.pending_thinking, available_width);
-            total_lines += wrapped.len();
-            // Add blank line between thinking and response if response is present
-            if !self.pending_response.is_empty() {
-                total_lines += 1;
-            }
-        }
-
-        // Account for pending response tokens (if streaming)
-        if !self.pending_response.is_empty() {
-            let wrapped = wrap_text(&self.pending_response, available_width);
-            total_lines += wrapped.len();
-        }
-
-        total_lines
-    }
-
     pub fn scroll_up(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_STEP);
-        self.user_scrolled = true;
-    }
-
-    /// Clamp scroll_offset to valid bounds after any operation that might change line counts
-    pub fn clamp_scroll_offset(&mut self) {
-        let total_lines = self.calculate_total_lines();
-        let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
-        self.scroll_offset = self.scroll_offset.min(max_scroll);
+        self.auto_scroll = false;
     }
 
     pub fn scroll_down(&mut self) {
-        let total_lines = self.calculate_total_lines();
-        let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
+        let max_scroll = self
+            .rendered_line_count
+            .saturating_sub(self.messages_rect.height as usize);
         self.scroll_offset = (self.scroll_offset + SCROLL_STEP).min(max_scroll);
         if self.scroll_offset >= max_scroll {
-            self.user_scrolled = false;
+            self.auto_scroll = true;
         }
     }
 
-    pub fn calculate_scroll_info(&self) -> (bool, usize) {
-        let total_lines = self.calculate_total_lines();
-        let max_scroll = total_lines.saturating_sub(self.messages_rect.height as usize);
-        let at_bottom = self.scroll_offset >= max_scroll;
-
-        (at_bottom, total_lines)
-    }
-
     pub fn handle_scrollbar_click(&mut self, mouse_y: u16) {
-        let (_at_bottom, total_lines) = self.calculate_scroll_info();
+        let total_lines = self.rendered_line_count;
         if total_lines as u16 <= self.messages_rect.height {
             return;
         }
@@ -553,7 +483,7 @@ impl App {
             self.scroll_offset = 0;
         }
 
-        self.user_scrolled = true;
+        self.auto_scroll = false;
     }
 
     pub fn insert_char(&mut self, c: char) {
@@ -1066,7 +996,9 @@ impl App {
             // Get models from DB now before spawning thread (DB can't be cloned)
             let db_models = if let Some(provider) = &provider {
                 if let Some(db) = &self.db {
-                    db.get_provider_models(&provider.name).ok().filter(|m| !m.is_empty())
+                    db.get_provider_models(&provider.name)
+                        .ok()
+                        .filter(|m| !m.is_empty())
                 } else {
                     None
                 }
@@ -1237,7 +1169,7 @@ impl App {
                     self.messages.clear();
                     self.history.clear();
                     self.history_index = None;
-                    self.scroll_offset = 0;
+                    self.auto_scroll = true;
                     let _old_session_id = std::mem::replace(
                         &mut self.session_id,
                         crate::utils::generate_session_id(),
@@ -1257,7 +1189,7 @@ impl App {
                     self.messages.clear();
                     self.history.clear();
                     self.history_index = None;
-                    self.scroll_offset = 0;
+                    self.auto_scroll = true;
                     if let Some(db) = &self.db {
                         let _ = db.clear_session_messages(&self.session_id);
                     }

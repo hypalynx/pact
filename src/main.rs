@@ -14,8 +14,8 @@ use std::time::Duration;
 use pact::app::App;
 use pact::config::Config;
 use pact::db::Db;
-use pact::{event, ui, utils};
 use pact::llm::LlmEvent;
+use pact::{event, ui, utils};
 
 #[derive(Parser)]
 #[command(name = "pact")]
@@ -186,7 +186,8 @@ fn main() -> std::io::Result<()> {
     app.load_providers_from_db();
 
     // Fetch server info in background (don't block startup on network call)
-    let endpoint = app.active_provider
+    let endpoint = app
+        .active_provider
         .as_ref()
         .map(|p| p.endpoint.clone())
         .unwrap_or_else(|| DEFAULT_LOCAL_ENDPOINT.to_string());

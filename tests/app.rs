@@ -67,25 +67,14 @@ fn add_test_messages(app: &mut App, count: usize) {
 }
 
 #[test]
-fn test_scroll_info_detects_at_bottom() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 2);
-
-    // Set viewport to simulate terminal size
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
-
-    let (at_bottom, _total_lines) = app.calculate_scroll_info();
-    // With scroll_offset = 0 and small number of lines, should be at bottom
-    assert!(at_bottom);
+fn test_auto_scroll_initialization() {
+    let app = create_test_app();
+    // New app should start with auto_scroll = true
+    assert!(app.auto_scroll);
 }
 
 #[test]
-fn test_scroll_up_sets_user_scrolled() {
+fn test_scroll_up_disables_auto_scroll() {
     let mut app = create_test_app();
     add_test_messages(&mut app, 10);
 
@@ -96,13 +85,13 @@ fn test_scroll_up_sets_user_scrolled() {
         height: 10,
     };
 
-    assert!(!app.user_scrolled);
+    assert!(app.auto_scroll);
     app.scroll_up();
-    assert!(app.user_scrolled);
+    assert!(!app.auto_scroll);
 }
 
 #[test]
-fn test_scroll_down_to_bottom_clears_user_scrolled() {
+fn test_scroll_down_to_bottom_enables_auto_scroll() {
     let mut app = create_test_app();
     add_test_messages(&mut app, 10);
 
@@ -112,37 +101,23 @@ fn test_scroll_down_to_bottom_clears_user_scrolled() {
         width: 80,
         height: 10,
     };
+
+    // Simulate rendered_line_count being set by renderer
+    app.rendered_line_count = 50;
 
     // Simulate user scrolling up
     app.scroll_up();
-    assert!(app.user_scrolled);
+    assert!(!app.auto_scroll);
 
-    // Scroll down to bottom
-    let total_lines = app.calculate_total_lines();
-    let max_scroll = total_lines.saturating_sub(10);
+    // Scroll down to bottom (set offset near max so scroll_down reaches it)
+    let max_scroll = app
+        .rendered_line_count
+        .saturating_sub(app.messages_rect.height as usize);
     app.scroll_offset = max_scroll;
     app.scroll_down();
 
-    // Should reset user_scrolled when at bottom
-    assert!(!app.user_scrolled);
-}
-
-#[test]
-fn test_was_at_bottom_initialization() {
-    let app = create_test_app();
-    // New app should start with was_at_bottom = true
-    assert!(app.was_at_bottom);
-}
-
-#[test]
-fn test_calculate_total_lines() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 2);
-
-    let total_lines = app.calculate_total_lines();
-    // Each message has 3 lines, so 2 messages = 6 lines
-    // Plus some spacing/formatting may add lines
-    assert!(total_lines >= 6);
+    // Should re-enable auto_scroll when at bottom
+    assert!(app.auto_scroll);
 }
 
 #[test]
@@ -157,8 +132,11 @@ fn test_scroll_offset_bounds() {
         height: 10,
     };
 
-    let total_lines = app.calculate_total_lines();
-    let max_scroll = total_lines.saturating_sub(app.messages_rect.height as usize);
+    // Simulate rendered_line_count being set by renderer
+    app.rendered_line_count = 30;
+    let max_scroll = app
+        .rendered_line_count
+        .saturating_sub(app.messages_rect.height as usize);
 
     // Scroll down multiple times
     for _ in 0..10 {
@@ -181,12 +159,10 @@ fn test_scroll_up_multiple_times() {
         height: 10,
     };
 
-    // First scroll to middle of content
-    let total_lines = app.calculate_total_lines();
-    let max_scroll = total_lines.saturating_sub(10);
-    if max_scroll > 5 {
-        app.scroll_offset = max_scroll / 2;
-    }
+    // Simulate rendered_line_count and position in middle
+    app.rendered_line_count = 50;
+    let max_scroll = app.rendered_line_count.saturating_sub(10);
+    app.scroll_offset = max_scroll / 2;
 
     let initial_offset = app.scroll_offset;
 
@@ -197,7 +173,7 @@ fn test_scroll_up_multiple_times() {
 
     // Offset should have decreased (scrolled up in content)
     assert!(app.scroll_offset < initial_offset);
-    assert!(app.user_scrolled);
+    assert!(!app.auto_scroll);
 }
 
 #[test]
@@ -214,36 +190,16 @@ fn test_submit_message_clears_input() {
 }
 
 #[test]
-fn test_send_to_llm_resets_user_scrolled() {
+fn test_submit_message_enables_auto_scroll() {
     let mut app = create_test_app();
-    app.user_scrolled = true;
+    app.auto_scroll = false;
+    app.input = "Test message".to_string();
+    app.cursor_pos = 12;
 
-    app.send_to_llm();
+    app.submit_message();
 
-    // Sending to LLM should reset user_scrolled
-    // (This is the current behavior, may need to change)
-    assert!(!app.user_scrolled);
-}
-
-#[test]
-fn test_calculate_scroll_info_with_overflow() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 20);
-
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 5,
-    };
-
-    let (at_bottom, total_lines) = app.calculate_scroll_info();
-
-    // With many lines and small viewport, total_lines should be much > viewport
-    assert!(total_lines > 5);
-
-    // At scroll_offset 0, we're not at bottom when content overflows
-    assert!(!at_bottom);
+    // Submitting a message should re-enable auto_scroll
+    assert!(app.auto_scroll);
 }
 
 #[test]
@@ -267,75 +223,27 @@ fn test_scroll_offset_saturating_behavior() {
 }
 
 #[test]
-fn test_sticky_to_bottom_when_at_bottom() {
+fn test_auto_scroll_flag_controls_scroll_behavior() {
     let mut app = create_test_app();
-    add_test_messages(&mut app, 10);
 
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
+    // auto_scroll starts true
+    assert!(app.auto_scroll);
 
-    // Position at bottom
-    let total_lines = app.calculate_total_lines();
-    let max_scroll = total_lines.saturating_sub(10);
-    app.scroll_offset = max_scroll;
-
-    // Verify we're at bottom
-    let (at_bottom, _) = app.calculate_scroll_info();
-    assert!(at_bottom);
-
-    // Simulate new content arriving (like a Token event)
-    // The scroll logic should auto-scroll to stay at bottom
-    let (at_bottom, new_total) = app.calculate_scroll_info();
-    if at_bottom {
-        app.scroll_offset = new_total.saturating_sub(10);
-    }
-
-    // Should be at new bottom position
-    let (still_at_bottom, _) = app.calculate_scroll_info();
-    assert!(still_at_bottom);
-}
-
-#[test]
-fn test_no_auto_scroll_when_scrolled_up() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 10);
-
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
-
-    // Position at bottom
-    let total_lines = app.calculate_total_lines();
-    let max_scroll = total_lines.saturating_sub(10);
-    app.scroll_offset = max_scroll;
-
-    // User scrolls up (away from bottom)
+    // scroll_up disables it
     app.scroll_up();
+    assert!(!app.auto_scroll);
 
-    // Verify we're NOT at bottom
-    let (at_bottom, _) = app.calculate_scroll_info();
-    assert!(!at_bottom);
-
-    let saved_offset = app.scroll_offset;
-
-    // Simulate new content arriving
-    // The scroll logic should NOT auto-scroll when not at bottom
-    let (at_bottom, new_total) = app.calculate_scroll_info();
-    if at_bottom {
-        app.scroll_offset = new_total.saturating_sub(10);
-    }
-
-    // Should stay at same position (not auto-scrolled)
-    assert_eq!(app.scroll_offset, saved_offset);
-    let (still_not_at_bottom, _) = app.calculate_scroll_info();
-    assert!(!still_not_at_bottom);
+    // Simulating scroll_down to bottom re-enables it
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 10,
+    };
+    app.rendered_line_count = 10; // Content fits viewport
+    app.scroll_offset = 0;
+    app.scroll_down(); // At max_scroll = 0, offset >= max_scroll
+    assert!(app.auto_scroll);
 }
 
 #[test]

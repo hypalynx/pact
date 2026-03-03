@@ -7,15 +7,6 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKi
 pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
     match event {
         LlmEvent::Token(t, _call_id) => {
-            // Check if at bottom BEFORE adding content
-            let was_at_bottom = if app.messages_rect.height > 0 {
-                let (at_bottom, _) = app.calculate_scroll_info();
-                at_bottom
-            } else {
-                // Startup: viewport not sized yet, assume at bottom
-                true
-            };
-
             // Add content - trim leading whitespace from first token of new response
             // to avoid gaps after tool calls (e.g., "\n\nHere's the answer...")
             if app.pending_response.is_empty() {
@@ -26,50 +17,11 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             } else {
                 app.pending_response.push_str(&t);
             }
-
-            // Auto-scroll to bottom if we were at bottom before content arrived
-            // Don't auto-scroll if user manually scrolled
-            if was_at_bottom && !app.user_scrolled {
-                let total_lines = app.calculate_total_lines();
-                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
-            } else {
-                // Ensure scroll offset stays valid even when not auto-scrolling
-                app.clamp_scroll_offset();
-            }
         }
         LlmEvent::Thinking(t, _call_id) => {
-            // Check if at bottom BEFORE adding content
-            let was_at_bottom = if app.messages_rect.height > 0 {
-                let (at_bottom, _) = app.calculate_scroll_info();
-                at_bottom
-            } else {
-                // Startup: viewport not sized yet, assume at bottom
-                true
-            };
-
-            // Add content
             app.pending_thinking.push_str(&t);
-
-            // Auto-scroll to bottom if we were at bottom before content arrived
-            // Don't auto-scroll if user manually scrolled
-            if was_at_bottom && !app.user_scrolled {
-                let total_lines = app.calculate_total_lines();
-                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
-            } else {
-                // Ensure scroll offset stays valid even when not auto-scrolling
-                app.clamp_scroll_offset();
-            }
         }
         LlmEvent::Done(_call_id) => {
-            // Check if at bottom BEFORE adding message
-            let was_at_bottom = if app.messages_rect.height > 0 {
-                let (at_bottom, _) = app.calculate_scroll_info();
-                at_bottom
-            } else {
-                // Startup: viewport not sized yet, assume at bottom
-                true
-            };
-
             let mut text = std::mem::take(&mut app.pending_response);
             let thinking = if app.pending_thinking.is_empty() {
                 None
@@ -101,30 +53,12 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
             app.active_call_id = None;
 
-            // Auto-scroll to bottom if we were at bottom before message added
-            if was_at_bottom {
-                let total_lines = app.calculate_total_lines();
-                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
-            } else {
-                // Ensure scroll offset stays valid even if user manually scrolled
-                app.clamp_scroll_offset();
-            }
-
             // Queue mode: if user tried to send while we were busy, send now
             if app.pending_send {
                 app.send_to_llm();
             }
         }
         LlmEvent::Error(e, _call_id) => {
-            // Check if at bottom BEFORE adding message
-            let was_at_bottom = if app.messages_rect.height > 0 {
-                let (at_bottom, _) = app.calculate_scroll_info();
-                at_bottom
-            } else {
-                // Startup: viewport not sized yet, assume at bottom
-                true
-            };
-
             let text = format!("Error: {}", e);
             app.messages.push(Message {
                 role: "assistant".to_string(),
@@ -141,12 +75,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             // Show error in status bar for 5 seconds (300 frames at 60fps)
             app.error_message = Some(format!("Error: {}", &e[..e.len().min(50)]));
             app.last_error_frame = app.frame_count;
-
-            // Auto-scroll to bottom if we were at bottom before message added
-            if was_at_bottom {
-                let total_lines = app.calculate_total_lines();
-                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
-            }
 
             // Queue mode: if user tried to send while we were busy, send now
             if app.pending_send {
@@ -329,15 +257,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 }
             }
 
-            // Check if at bottom BEFORE adding content
-            let was_at_bottom = if app.messages_rect.height > 0 {
-                let (at_bottom, _) = app.calculate_scroll_info();
-                at_bottom
-            } else {
-                // Startup: viewport not sized yet, assume at bottom
-                true
-            };
-
             // First, save any pending thinking/response as an assistant message
             // This preserves the LLM's thought process before the tool call
             // Trim trailing newlines to avoid gaps where the <tool_call> was stripped
@@ -387,13 +306,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     call_id,
                 });
             });
-
-            // Auto-scroll to bottom if we were at bottom before tool result was added
-            // Don't auto-scroll if user manually scrolled
-            if was_at_bottom && !app.user_scrolled {
-                let total_lines = app.calculate_total_lines();
-                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
-            }
 
             app.send_to_llm();
         }
@@ -455,11 +367,11 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
         }
         LlmEvent::ModelsLoaded { models } => {
             // Update the model picker with fetched models
-            if let Some(picker) = &mut app.slash_picker {
-                if picker.command == crate::app::SlashCommand::Model {
-                    picker.all_entries = models;
-                    app.slash_picker_update_filter();
-                }
+            if let Some(picker) = &mut app.slash_picker
+                && picker.command == crate::app::SlashCommand::Model
+            {
+                picker.all_entries = models;
+                app.slash_picker_update_filter();
             }
         }
     }
@@ -898,13 +810,6 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
 
     if let Some(approved) = confirm {
         if let Some(pending) = app.pending_bash_confirm.take() {
-            let was_at_bottom = if app.messages_rect.height > 0 {
-                let (at_bottom, _) = app.calculate_scroll_info();
-                at_bottom
-            } else {
-                true
-            };
-
             if approved {
                 // User approved - execute the command
                 let (summary, content) = tools::execute_bash_unchecked(&pending.command, None);
@@ -938,12 +843,6 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
                 }
             }
 
-            // Auto-scroll to bottom if we were at bottom before
-            if was_at_bottom && !app.user_scrolled {
-                let total_lines = app.calculate_total_lines();
-                app.scroll_offset = total_lines.saturating_sub(app.messages_rect.height as usize);
-            }
-
             app.send_to_llm();
         }
         return true;
@@ -957,11 +856,9 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             app.scroll_up();
-            app.user_scrolled = true;
         }
         MouseEventKind::ScrollDown => {
             app.scroll_down();
-            app.user_scrolled = true;
         }
         MouseEventKind::Down(_) => {
             let scrollbar_x = app.messages_rect.x + app.messages_rect.width.saturating_sub(1);

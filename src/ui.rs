@@ -99,9 +99,6 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     app.messages_rect = messages_area;
     app.input_rect = input_area;
 
-    let (at_bottom, _) = app.calculate_scroll_info();
-    app.was_at_bottom = at_bottom;
-
     draw_messages(app, frame);
     draw_input(app, frame);
     draw_status(app, frame, status_area);
@@ -282,9 +279,20 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
     // Store the text lines for selection extraction
     app.all_line_texts = text_lines;
 
-    let line_count = lines.len() as u16;
-    let max_scroll = line_count.saturating_sub(app.messages_rect.height);
-    let start_line = (app.scroll_offset as u16).min(max_scroll);
+    // Renderer-driven scroll: single source of truth for scroll position
+    let line_count = lines.len();
+    let viewport = app.messages_rect.height as usize;
+    let max_scroll = line_count.saturating_sub(viewport);
+
+    if app.auto_scroll {
+        app.scroll_offset = max_scroll;
+    }
+    app.scroll_offset = app.scroll_offset.min(max_scroll);
+    app.rendered_line_count = line_count;
+
+    let line_count = line_count as u16;
+    let max_scroll = max_scroll as u16;
+    let start_line = app.scroll_offset as u16;
 
     // Apply selection highlighting if selection is active
     let visible_lines: Vec<Line> = if let (Some(sel_start), Some(sel_end)) =
@@ -638,7 +646,7 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect) {
         .next()
         .unwrap_or(&raw_model_id)
         .to_string();
-    let (_, total_lines) = app.calculate_scroll_info();
+    let total_lines = app.rendered_line_count;
     let max_scroll = total_lines.saturating_sub(app.messages_rect.height as usize);
     let scroll_info = if max_scroll > 0 {
         format!(" [{}%]", (app.scroll_offset * 100) / max_scroll)
