@@ -6,14 +6,6 @@
 - [ ] config setting to turn off thinking via prompt
 - [ ] format code blocks with markdown ```rust etc ```
 - [ ] Event loop monitoring: test & monitor if event loop is blocked (>16ms)
-- [ ] Slash command improvements:
-  - [ ] Handle /v1/model (shouldn't trigger slash command)
-- [ ] Allow more lines in user input
-- [ ] context counting is not accurate and also does not reset
-  when context is cleared with /new
-- [ ] no limit on read or bash output (generally no limit on tool
-  output) - what is a good approach here? limit to.. 250? + add
-  a line so the LLM knows it's truncated?
 - [ ] no todowrite/read/list etc
 - [ ] improve code coverage.. consider popular/well known ways to
   increase reliability of a cli tool
@@ -24,3 +16,7 @@
   line numbers and show the lines +/- 5 around the context
   being added/changed.
 - consider supporting xml tool call (like the one qwen emitted)
+- up/down should only go up/down message history if you are at
+  the top/bottom of the current message input content, the latest
+  message (unsent) should be preseved so you can return to
+  it

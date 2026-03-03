@@ -3,6 +3,10 @@ use similar::{ChangeTag, TextDiff};
 use std::fs;
 use std::path::Path;
 
+// Maximum number of lines to return from tool outputs
+const MAX_OUTPUT_LINES: usize = 500;
+const MAX_OUTPUT_CONTEXT: usize = 50; // Lines to show at end when truncating
+
 #[derive(Debug, Clone)]
 pub struct ToolCall {
     pub name: String,
@@ -15,13 +19,17 @@ pub fn get_tool_definitions() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "Read",
-                "description": "Read the complete contents of a file. Accepts absolute paths (starting with /) or relative paths from current directory. Returns the raw text content. Files larger than 64KB are truncated with a warning.",
+                "description": "Read the complete contents of a file. Accepts absolute paths (starting with /) or relative paths from current directory. Returns the raw text content. Large files are truncated - use offset to read specific portions.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "filePath": {
                             "type": "string",
                             "description": "Path to the file - either absolute (e.g., /etc/hosts) or relative (e.g., ./README.md)"
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Line number to start reading from (1-indexed). Useful for reading large files in chunks. Defaults to 1."
                         }
                     },
                     "required": ["filePath"],
@@ -192,6 +200,14 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
         }
     };
 
+    // Parse offset parameter (1-indexed, defaults to 1)
+    let offset = args
+        .get("offset")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(1)
+        .saturating_sub(1); // Convert to 0-indexed
+
     // Accept both absolute and relative paths
     let full_path = if Path::new(path).is_absolute() {
         path.to_string()
@@ -221,8 +237,54 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
     match fs::read_to_string(&full_path) {
         Ok(content) => {
             let summary = format!("Reading {}", filename);
+
+            // Apply offset and limit output
+            let all_lines: Vec<&str> = content.lines().collect();
+            let total_lines = all_lines.len();
+
+            // Apply offset
+            let lines_from_offset: Vec<&str> = all_lines.iter().skip(offset).cloned().collect();
+            let lines_from_offset_count = lines_from_offset.len();
+
+            // Apply line limit with smart truncation
+            let result = if lines_from_offset_count > MAX_OUTPUT_LINES {
+                let head_lines = MAX_OUTPUT_LINES - MAX_OUTPUT_CONTEXT;
+                let head: Vec<&str> = lines_from_offset.iter().take(head_lines).cloned().collect();
+                let tail: Vec<&str> = lines_from_offset
+                    .iter()
+                    .skip(lines_from_offset_count - MAX_OUTPUT_CONTEXT)
+                    .cloned()
+                    .collect();
+                let skipped = lines_from_offset_count - head_lines - MAX_OUTPUT_CONTEXT;
+                let offset_note = if offset > 0 {
+                    format!(" (starting from line {})", offset + 1)
+                } else {
+                    String::new()
+                };
+                format!(
+                    "{}\n\n[... {} lines truncated{} ...]\n\n{}",
+                    head.join("\n"),
+                    skipped,
+                    offset_note,
+                    tail.join("\n")
+                )
+            } else {
+                let lines_str = lines_from_offset.join("\n");
+                if offset > 0 {
+                    format!(
+                        "{}\n\n[Read from line {} to {} of {} total]",
+                        lines_str,
+                        offset + 1,
+                        offset + lines_from_offset_count,
+                        total_lines
+                    )
+                } else {
+                    lines_str
+                }
+            };
+
             // Return content for LLM (first element is UI summary, second is LLM result)
-            (summary, content)
+            (summary, result)
         }
         Err(e) => {
             let error = format!("Error reading file '{}': {}", path, e);
@@ -372,7 +434,7 @@ fn execute_bash(args: &serde_json::Map<String, Value>) -> (String, String) {
 
 /// Execute bash command without validation - used only after user confirmation
 pub fn execute_bash_unchecked(command: &str, description_opt: Option<&str>) -> (String, String) {
-    const MAX_OUTPUT: usize = 65536; // 64KB
+    const MAX_OUTPUT_BYTES: usize = 65536; // 64KB
 
     let description = description_opt.unwrap_or(command);
 
@@ -389,9 +451,32 @@ pub fn execute_bash_unchecked(command: &str, description_opt: Option<&str>) -> (
                 result.push_str(&String::from_utf8_lossy(&output.stderr));
             }
 
-            // Truncate if too large
-            if result.len() > MAX_OUTPUT {
-                result.truncate(MAX_OUTPUT);
+            // First apply line-based truncation for very long outputs
+            let lines: Vec<&str> = result.lines().collect();
+            let line_count = lines.len();
+            let result = if line_count > MAX_OUTPUT_LINES {
+                let head_lines = MAX_OUTPUT_LINES - MAX_OUTPUT_CONTEXT;
+                let head: Vec<&str> = lines.iter().take(head_lines).cloned().collect();
+                let tail: Vec<&str> = lines
+                    .iter()
+                    .skip(line_count - MAX_OUTPUT_CONTEXT)
+                    .cloned()
+                    .collect();
+                let skipped = line_count - head_lines - MAX_OUTPUT_CONTEXT;
+                format!(
+                    "{}\n\n[... {} lines truncated ...]\n\n{}",
+                    head.join("\n"),
+                    skipped,
+                    tail.join("\n")
+                )
+            } else {
+                result
+            };
+
+            // Then apply byte limit as safety net
+            let mut result = result;
+            if result.len() > MAX_OUTPUT_BYTES {
+                result.truncate(MAX_OUTPUT_BYTES);
                 result.push_str("\n[Output truncated at 64KB]");
             }
 

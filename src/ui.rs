@@ -11,7 +11,7 @@ use ratatui::{
 
 // Input box layout constants
 const INPUT_MIN_HEIGHT: u16 = 3;
-const INPUT_MAX_HEIGHT: u16 = 10;
+const INPUT_MAX_HEIGHT: u16 = 20;
 const INPUT_HORIZONTAL_MARGIN: u16 = 3;
 const INPUT_VERTICAL_MARGIN: u16 = 1;
 
@@ -394,7 +394,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame) {
     }
 }
 
-fn draw_input(app: &App, frame: &mut Frame) {
+fn draw_input(app: &mut App, frame: &mut Frame) {
     let margin = Paragraph::new("").style(Style::default().bg(Color::Black));
     frame.render_widget(margin, app.input_rect);
 
@@ -404,9 +404,34 @@ fn draw_input(app: &App, frame: &mut Frame) {
     });
 
     let available_width = (inner.width.saturating_sub(1)) as usize;
+    let inner_height = inner.height as usize;
 
     // Wrap the input text to available width
     let wrapped_lines = wrap_text(&app.input, available_width);
+    let total_lines = wrapped_lines.len();
+
+    // Calculate cursor position to determine scroll offset
+    let (cursor_x, cursor_y) = if app.active_llm_calls == 0 {
+        cursor_position(&app.input, app.cursor_pos, available_width)
+    } else {
+        (0, 0)
+    };
+
+    // Adjust scroll offset to ensure cursor is visible
+    if total_lines > inner_height {
+        if cursor_y >= app.input_scroll_offset + inner_height {
+            // Cursor is below visible area - scroll down
+            app.input_scroll_offset = cursor_y.saturating_sub(inner_height - 1);
+        } else if cursor_y < app.input_scroll_offset {
+            // Cursor is above visible area - scroll up
+            app.input_scroll_offset = cursor_y;
+        }
+        // Ensure scroll offset doesn't exceed max
+        let max_scroll = total_lines.saturating_sub(inner_height);
+        app.input_scroll_offset = app.input_scroll_offset.min(max_scroll);
+    } else {
+        app.input_scroll_offset = 0;
+    }
 
     let mut lines: Vec<Line> = Vec::new();
     for line_text in wrapped_lines {
@@ -414,14 +439,18 @@ fn draw_input(app: &App, frame: &mut Frame) {
         lines.push(Line::from(spans));
     }
 
-    let input = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    // Apply scroll to show the relevant portion of input
+    let input = Paragraph::new(lines)
+        .style(Style::default().bg(Color::Black))
+        .scroll((app.input_scroll_offset as u16, 0));
     frame.render_widget(input, inner);
 
     if app.active_llm_calls == 0 {
-        let (cursor_x, cursor_y) = cursor_position(&app.input, app.cursor_pos, available_width);
+        // Adjust cursor Y position based on scroll
+        let visible_cursor_y = cursor_y.saturating_sub(app.input_scroll_offset);
         let cursor_pos = ratatui::layout::Position {
             x: inner.x + cursor_x as u16,
-            y: inner.y + cursor_y as u16,
+            y: inner.y + visible_cursor_y as u16,
         };
         frame.set_cursor_position(cursor_pos);
     }

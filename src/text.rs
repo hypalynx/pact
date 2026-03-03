@@ -120,6 +120,14 @@ pub fn cursor_position(input: &str, cursor_pos: usize, width: usize) -> (usize, 
     let ends_with_whitespace = last_char.is_some_and(|c| c.is_whitespace());
 
     if ends_with_whitespace && !wrapped.is_empty() {
+        // Check if the whitespace is a newline (which moves to next line, col 0)
+        let is_newline = last_char.is_some_and(|c| c == '\n');
+        if is_newline {
+            // Newline: cursor should be at the beginning of the newly created line
+            // wrapped.len() includes the new empty line, so cursor is at wrapped.len() - 1
+            return (0, wrapped.len() - 1);
+        }
+
         // Cursor is at trailing whitespace that was stripped
         // We need to figure out if this whitespace would cause wrapping
         let last_line = wrapped.last().unwrap();

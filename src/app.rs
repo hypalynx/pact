@@ -120,6 +120,7 @@ pub struct App {
     pub selection_start: Option<(u16, u16)>,
     pub selection_end: Option<(u16, u16)>,
     pub last_copy_frame: u32,
+    pub input_scroll_offset: usize,
     pub error_message: Option<String>,
     pub last_error_frame: u32,
     pub exit_confirm_frame: u32,
@@ -221,6 +222,7 @@ impl App {
             selection_start: None,
             selection_end: None,
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
+            input_scroll_offset: 0,
             error_message: db_error,
             last_error_frame: u32::MAX,
             exit_confirm_frame: u32::MAX,
@@ -1165,11 +1167,15 @@ impl App {
                     self.last_error_frame = self.frame_count;
                 }
                 SlashCommand::New => {
-                    // Start a new session: generate new session ID, clear messages
+                    // Start a new session: generate new session ID, clear messages, reset tokens
                     self.messages.clear();
                     self.history.clear();
                     self.history_index = None;
                     self.auto_scroll = true;
+                    // Reset token counts when starting a new session
+                    self.total_input_tokens = 0;
+                    self.total_output_tokens = 0;
+                    self.last_output_tokens = 0;
                     let _old_session_id = std::mem::replace(
                         &mut self.session_id,
                         crate::utils::generate_session_id(),

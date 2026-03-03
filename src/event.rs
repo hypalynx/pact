@@ -452,10 +452,23 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
                             app.slash_picker = None;
                             app.start_slash_picker(SlashCommand::Connect, "");
                         }
+                    } else if current_text == "/new" || current_text.starts_with("/new ") {
+                        // User typed "/new" - execute immediately
+                        app.slash_picker = None;
+                        app.start_slash_picker(SlashCommand::New, "");
+                        app.slash_picker_select();
+                    } else if current_text == "/clear" || current_text.starts_with("/clear ") {
+                        // User typed "/clear" - execute immediately
+                        app.slash_picker = None;
+                        app.start_slash_picker(SlashCommand::Clear, "");
+                        app.slash_picker_select();
                     } else if !current_text.starts_with("/model")
                         && !current_text.starts_with("/connect")
+                        && !current_text.starts_with("/new")
+                        && !current_text.starts_with("/clear")
                     {
                         // Not a recognized slash command, cancel the picker
+                        // This also handles patterns like "/v1/model" which shouldn't trigger commands
                         app.slash_picker = None;
                     }
                 }
