@@ -3,15 +3,17 @@
 ## Remaining Work (Nice-to-Have Polish)
 
 ### Not Started
+- [ ] Research: Find list of tools LLMs typically support and implement them
+  - Focus on todo list tools (todowrite/read/list) - research shows these help LLM focus
+- [ ] Research: Control tokens for disabling thinking in supported models
+  - Resources: https://github.com/QwenLM/Qwen3.5, Fireworks reasoning-parser docs
 - [ ] config setting to turn off thinking via prompt
 - [ ] format code blocks with markdown ```rust etc ```
-- [ ] Event loop monitoring: test & monitor if event loop is blocked (>16ms)
-- [ ] no todowrite/read/list etc
 - [ ] improve code coverage.. consider popular/well known ways to
   increase reliability of a cli tool
-- [ ] consistent UI experience.. how to? also break down manually
-  i.e no outline borders, consistent keybindings (i.e esc at any
-  point to cancel even if input, esc during menu closes the menu)
+- [ ] consistent UI experience - consistent keybindings
+  (i.e esc at any point to cancel even if input, esc during menu closes the menu)
+  - [x] Remove outline borders from modals (using EMPTY border set)
 - syntax highlighting in diffs, diffs should also contain
   line numbers and show the lines +/- 5 around the context
   being added/changed.

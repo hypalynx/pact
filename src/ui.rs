@@ -5,6 +5,7 @@ use ratatui::Frame;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
+    symbols,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
@@ -523,6 +524,7 @@ fn draw_control_panel(app: &App, frame: &mut Frame) {
 
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_set(symbols::border::EMPTY)
         .title(" Control Panel ")
         .style(Style::default().bg(Color::Black));
 
@@ -714,6 +716,7 @@ fn draw_file_picker(app: &App, frame: &mut Frame) {
             let title = format!("@{}", picker.query);
             let block = Block::default()
                 .borders(Borders::ALL)
+                .border_set(symbols::border::EMPTY)
                 .title(title)
                 .style(Style::default().bg(Color::Black));
 
@@ -788,6 +791,7 @@ fn draw_slash_picker(app: &App, frame: &mut Frame) {
 
             let block = Block::default()
                 .borders(Borders::ALL)
+                .border_set(symbols::border::EMPTY)
                 .title(title)
                 .style(Style::default().bg(Color::Black));
 
@@ -863,6 +867,7 @@ fn draw_api_key_input(app: &App, frame: &mut Frame) {
         if app.input_rect.y >= height {
             let block = Block::default()
                 .borders(Borders::ALL)
+                .border_set(symbols::border::EMPTY)
                 .title("Enter API Key")
                 .style(Style::default().bg(Color::Black));
 
@@ -895,6 +900,7 @@ fn draw_bash_confirm(app: &App, frame: &mut Frame) {
         if app.input_rect.y >= height {
             let block = Block::default()
                 .borders(Borders::ALL)
+                .border_set(symbols::border::EMPTY)
                 .title("Dangerous Command")
                 .style(Style::default().bg(Color::Black));
 
@@ -974,6 +980,7 @@ fn draw_debug_modal(app: &App, frame: &mut Frame) {
 
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_set(symbols::border::EMPTY)
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Left)
         .style(Style::default().bg(Color::Black));
