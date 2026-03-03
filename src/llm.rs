@@ -7,6 +7,13 @@ use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCallInfo {
+    pub id: String,
+    pub name: String,
+    pub arguments: String, // JSON string
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
     pub role: String,
     pub text: String,
@@ -20,6 +27,8 @@ pub struct Message {
     pub tool_call_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCallInfo>>,
 }
 
 pub enum LlmEvent {
@@ -118,9 +127,8 @@ pub fn call_llm(
 
     // Add conversation messages
     for m in messages {
-        // Skip empty non-tool messages - they confuse the model and cause looping
-        // (tool messages may legitimately be empty)
-        if !m.is_tool_result && m.text.trim().is_empty() {
+        // Skip empty non-tool messages (no text AND no tool_calls) - they confuse the model
+        if !m.is_tool_result && m.text.trim().is_empty() && m.tool_calls.is_none() {
             continue;
         }
 
@@ -135,6 +143,31 @@ pub fn call_llm(
                 tool_msg["tool_call_id"] = json!(tool_call_id);
             }
             tool_msg
+        } else if let Some(tool_calls) = &m.tool_calls {
+            // Assistant message with tool_calls
+            let tc_json: Vec<_> = tool_calls
+                .iter()
+                .map(|tc| {
+                    json!({
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": tc.arguments
+                        }
+                    })
+                })
+                .collect();
+            let mut obj = json!({
+                "role": "assistant",
+                "tool_calls": tc_json
+            });
+            if m.text.trim().is_empty() {
+                obj["content"] = serde_json::Value::Null;
+            } else {
+                obj["content"] = json!([{"type": "text", "text": m.text}]);
+            }
+            obj
         } else {
             // Regular messages: array format content
             json!({

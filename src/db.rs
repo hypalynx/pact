@@ -205,9 +205,13 @@ impl Db {
         working_directory: &str,
     ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
+        let tool_calls_json = msg
+            .tool_calls
+            .as_ref()
+            .and_then(|tc| serde_json::to_string(tc).ok());
         self.conn.execute(
-            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, session_id, working_directory)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, session_id, working_directory, tool_calls)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 now,
                 msg.role,
@@ -218,7 +222,8 @@ impl Db {
                 msg.tool_call_id,
                 msg.tool_name,
                 session_id,
-                working_directory
+                working_directory,
+                tool_calls_json
             ],
         )?;
         Ok(())
@@ -276,9 +281,11 @@ impl Db {
     pub fn load_messages(&self) -> Result<Vec<crate::llm::Message>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name FROM messages ORDER BY id ASC")?;
+            .prepare("SELECT role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, tool_calls FROM messages ORDER BY id ASC")?;
 
         let messages = stmt.query_map([], |row| {
+            let tool_calls_str: Option<String> = row.get(7)?;
+            let tool_calls = tool_calls_str.and_then(|s| serde_json::from_str(&s).ok());
             Ok(crate::llm::Message {
                 role: row.get(0)?,
                 text: row.get(1)?,
@@ -287,6 +294,7 @@ impl Db {
                 tool_result_content: row.get(4)?,
                 tool_call_id: row.get(5)?,
                 tool_name: row.get(6)?,
+                tool_calls,
             })
         })?;
 
@@ -351,11 +359,13 @@ impl Db {
 
     pub fn load_session_messages(&self, session_id: &str) -> Result<Vec<crate::llm::Message>> {
         let mut stmt = self.conn.prepare(
-            "SELECT role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name 
+            "SELECT role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, tool_calls
              FROM messages WHERE session_id = ?1 ORDER BY id ASC"
         )?;
 
         let messages = stmt.query_map([session_id], |row| {
+            let tool_calls_str: Option<String> = row.get(7)?;
+            let tool_calls = tool_calls_str.and_then(|s| serde_json::from_str(&s).ok());
             Ok(crate::llm::Message {
                 role: row.get(0)?,
                 text: row.get(1)?,
@@ -364,6 +374,7 @@ impl Db {
                 tool_result_content: row.get(4)?,
                 tool_call_id: row.get(5)?,
                 tool_name: row.get(6)?,
+                tool_calls,
             })
         })?;
 
@@ -413,9 +424,13 @@ impl Db {
         working_directory: &str,
     ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
+        let tool_calls_json = msg
+            .tool_calls
+            .as_ref()
+            .and_then(|tc| serde_json::to_string(tc).ok());
         self.conn.execute(
-            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, session_id, working_directory)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO messages (created_at, role, text, is_tool_result, thinking, tool_result_content, tool_call_id, tool_name, session_id, working_directory, tool_calls)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 now,
                 msg.role,
@@ -426,7 +441,8 @@ impl Db {
                 msg.tool_call_id,
                 msg.tool_name,
                 session_id,
-                working_directory
+                working_directory,
+                tool_calls_json
             ],
         )?;
         Ok(())

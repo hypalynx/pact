@@ -55,6 +55,7 @@ fn test_save_and_load_message() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     db.save_message(&msg, "test-session", "/tmp")
@@ -80,6 +81,7 @@ fn test_save_tool_result_message() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     db.save_message(&msg, "test-session", "/tmp")
@@ -103,6 +105,7 @@ fn test_save_message_with_thinking() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     db.save_message(&msg, "test-session", "/tmp")
@@ -126,6 +129,7 @@ fn test_clear_messages() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     db.save_message(&msg, "test-session", "/tmp")
@@ -227,6 +231,7 @@ fn test_load_messages_ordered() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     let msg2 = Message {
@@ -237,6 +242,7 @@ fn test_load_messages_ordered() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     db.save_message(&msg1, "test-session", "/tmp")
@@ -348,6 +354,7 @@ fn test_multiple_messages_with_mixed_types() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     let tool_msg = Message {
@@ -358,6 +365,7 @@ fn test_multiple_messages_with_mixed_types() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     let assistant_msg = Message {
@@ -368,6 +376,7 @@ fn test_multiple_messages_with_mixed_types() {
         tool_result_content: None,
         tool_call_id: None,
         tool_name: None,
+        tool_calls: None,
     };
 
     db.save_message(&user_msg, "test-session", "/tmp")

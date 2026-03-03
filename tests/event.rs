@@ -389,11 +389,18 @@ fn test_tool_call_without_pending_content() {
     // Process pending events from background thread
     process_pending_events(&mut app);
 
-    // Should only add ONE message (just the tool result, no empty assistant message)
-    assert_eq!(app.messages.len(), initial_count + 1);
+    // Should add TWO messages: assistant (with tool_calls) + tool result
+    assert_eq!(app.messages.len(), initial_count + 2);
 
-    // The only new message should be the tool result
-    let tool_msg = &app.messages[initial_count];
+    // First message: assistant with tool_calls (even with empty text, needed for API history)
+    let assistant_msg = &app.messages[initial_count];
+    assert_eq!(assistant_msg.role, "assistant");
+    assert!(assistant_msg.tool_calls.is_some());
+    assert_eq!(assistant_msg.tool_calls.as_ref().unwrap().len(), 1);
+    assert_eq!(assistant_msg.tool_calls.as_ref().unwrap()[0].name, "Read");
+
+    // Second message: tool result
+    let tool_msg = &app.messages[initial_count + 1];
     assert_eq!(tool_msg.role, "user");
     assert!(tool_msg.is_tool_result);
 }

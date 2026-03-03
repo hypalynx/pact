@@ -1,39 +1,7 @@
 use crate::app::{App, DEFAULT_MAX_TOKENS, PanelState, SlashCommand};
-use crate::llm::{LlmEvent, Message};
+use crate::llm::{LlmEvent, Message, ToolCallInfo};
 use crate::tools;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
-
-/// Save any accumulated pending_response/pending_thinking as an assistant message.
-/// Used before tool calls to preserve the LLM's text before the tool invocation.
-fn save_pending_assistant_message(app: &mut App) {
-    let text = std::mem::take(&mut app.pending_response)
-        .trim_end()
-        .to_string();
-    let thinking = if app.pending_thinking.is_empty() {
-        None
-    } else {
-        Some(
-            std::mem::take(&mut app.pending_thinking)
-                .trim_end()
-                .to_string(),
-        )
-    };
-    if !text.is_empty() || thinking.is_some() {
-        let msg = Message {
-            role: "assistant".to_string(),
-            text,
-            is_tool_result: false,
-            thinking,
-            tool_result_content: None,
-            tool_call_id: None,
-            tool_name: None,
-        };
-        app.messages.push(msg.clone());
-        if let Some(db) = &app.db {
-            let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
-        }
-    }
-}
 
 /// Handle incoming LLM events (tokens, done, errors, etc.)
 pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
@@ -79,6 +47,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     tool_result_content: None,
                     tool_call_id: None,
                     tool_name: None,
+                    tool_calls: None,
                 };
                 app.messages.push(msg.clone());
                 if let Some(db) = &app.db {
@@ -98,6 +67,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 tool_result_content: None,
                 tool_call_id: None,
                 tool_name: None,
+                tool_calls: None,
             });
             app.active_llm_calls = app.active_llm_calls.saturating_sub(1);
             app.active_call_id = None;
@@ -121,8 +91,60 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             args,
             call_id: _,
         } => {
-            // Save any pending assistant text before processing the tool call
-            save_pending_assistant_message(app);
+            // Build tool_call metadata for the assistant message
+            let tc_info = ToolCallInfo {
+                id: id.clone(),
+                name: name.clone(),
+                arguments: serde_json::to_string(&args).unwrap_or_default(),
+            };
+
+            // Attach tool_calls to assistant message:
+            // If last message is already an assistant with tool_calls (parallel calls), append
+            // Otherwise save pending text as a new assistant message with this tool_call
+            let appended = if let Some(last) = app.messages.last_mut() {
+                if let Some(ref mut tcs) = last.tool_calls {
+                    if last.role == "assistant" {
+                        tcs.push(tc_info.clone());
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !appended {
+                let text = std::mem::take(&mut app.pending_response)
+                    .trim_end()
+                    .to_string();
+                let thinking = if app.pending_thinking.is_empty() {
+                    None
+                } else {
+                    Some(
+                        std::mem::take(&mut app.pending_thinking)
+                            .trim_end()
+                            .to_string(),
+                    )
+                };
+                let msg = Message {
+                    role: "assistant".to_string(),
+                    text,
+                    is_tool_result: false,
+                    thinking,
+                    tool_result_content: None,
+                    tool_call_id: None,
+                    tool_name: None,
+                    tool_calls: Some(vec![tc_info]),
+                };
+                app.messages.push(msg.clone());
+                if let Some(db) = &app.db {
+                    let _ = db.save_message(&msg, &app.session_id, &app.working_directory);
+                }
+            }
+
             app.pending_tool_count += 1;
 
             // Check if this is a Bash tool call that might be dangerous
@@ -244,6 +266,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 tool_result_content: Some(content),
                 tool_call_id: Some(tool_call_id),
                 tool_name: Some(tool_name),
+                tool_calls: None,
             };
             app.messages.push(result_msg.clone());
             if let Some(db) = &app.db {
@@ -707,6 +730,7 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
                     tool_result_content: Some(content),
                     tool_call_id: Some(pending.tool_id),
                     tool_name: Some("Bash".to_string()),
+                    tool_calls: None,
                 };
                 app.messages.push(result_msg.clone());
                 if let Some(db) = &app.db {
@@ -722,6 +746,7 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
                     tool_result_content: Some("Command denied by user.".to_string()),
                     tool_call_id: Some(pending.tool_id),
                     tool_name: Some("Bash".to_string()),
+                    tool_calls: None,
                 };
                 app.messages.push(result_msg.clone());
                 if let Some(db) = &app.db {
