@@ -158,13 +158,16 @@ fn get_theme_set() -> &'static ThemeSet {
 pub fn highlight_code_block(code: &str, language: &str) -> Vec<Vec<Span<'static>>> {
     let syntax_set = get_syntax_set();
     let theme_set = get_theme_set();
-    let theme = theme_set.themes.get("base16-ocean.dark").unwrap_or_else(|| {
-        theme_set
-            .themes
-            .values()
-            .next()
-            .expect("at least one theme")
-    });
+    let theme = theme_set
+        .themes
+        .get("base16-ocean.dark")
+        .unwrap_or_else(|| {
+            theme_set
+                .themes
+                .values()
+                .next()
+                .expect("at least one theme")
+        });
 
     let syntax = syntax_set
         .find_syntax_by_token(language)
@@ -180,11 +183,7 @@ pub fn highlight_code_block(code: &str, language: &str) -> Vec<Vec<Span<'static>
 
         let mut spans = Vec::new();
         for (style, text) in ranges {
-            let color = Color::Rgb(
-                style.foreground.r,
-                style.foreground.g,
-                style.foreground.b,
-            );
+            let color = Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b);
             spans.push(Span::styled(text.to_string(), Style::default().fg(color)));
         }
         if spans.is_empty() {
@@ -267,9 +266,7 @@ pub fn render_message(text: &str, width: usize) -> Vec<(String, Vec<Span<'static
 
         // Extract language tag
         let lang_bytes = &text.as_bytes()[block.language..block.language + block.language_len];
-        let language = std::str::from_utf8(lang_bytes)
-            .unwrap_or("")
-            .trim();
+        let language = std::str::from_utf8(lang_bytes).unwrap_or("").trim();
 
         // Extract code block content (skip opening ``` line and closing ``` line)
         let fence_open_end = text[block.start..]
