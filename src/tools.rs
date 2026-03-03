@@ -1,5 +1,5 @@
 use serde_json::{Value, json};
-use similar::{ChangeTag, TextDiff};
+use similar::TextDiff;
 use std::fs;
 use std::path::Path;
 
@@ -748,37 +748,41 @@ fn strip_html_tags(html: &str) -> String {
 }
 
 fn generate_diff(old: &str, new: &str, filename: &str) -> String {
-    let diff = TextDiff::from_lines(old, new);
-    let mut result = format!("--- {}\n+++ {}\n", filename, filename);
-
-    let mut context_lines = Vec::new();
-    for change in diff.iter_all_changes() {
-        match change.tag() {
-            ChangeTag::Delete => {
-                result.push_str(&format!("- {}", change));
-            }
-            ChangeTag::Insert => {
-                result.push_str(&format!("+ {}", change));
-            }
-            ChangeTag::Equal => {
-                context_lines.push(format!("  {}", change));
-            }
-        }
-    }
-
-    // If file was new (no old content), show it differently
+    // New file case
     if old.is_empty() && !new.is_empty() {
-        result = format!("--- (new file)\n+++ {}\n", filename);
+        let mut result = format!(
+            "```diff\n--- /dev/null\n+++ {}\n@@ -0,0 +1,{} @@\n",
+            filename,
+            new.lines().count()
+        );
         for line in new.lines() {
-            result.push_str(&format!("+ {}\n", line));
+            result.push_str(&format!("+{}\n", line));
         }
+        result.push_str("```");
+        return result;
     }
 
-    // Limit diff output to 2000 chars to avoid overwhelming the user
-    if result.len() > 2000 {
-        result.truncate(2000);
-        result.push_str("\n\n... (diff truncated, too many changes)");
+    let diff = TextDiff::from_lines(old, new);
+    let unified = diff
+        .unified_diff()
+        .context_radius(5)
+        .header(&format!("--- {}", filename), &format!("+++ {}", filename))
+        .to_string();
+
+    if unified.trim().is_empty() {
+        return "(no changes)".to_string();
     }
 
-    result
+    // Limit to 3000 lines to avoid overwhelming output
+    let lines: Vec<&str> = unified.lines().collect();
+    let capped = if lines.len() > 3000 {
+        format!(
+            "{}\n\n... (diff truncated, too many changes)",
+            lines[..3000].join("\n")
+        )
+    } else {
+        unified
+    };
+
+    format!("```diff\n{}\n```", capped)
 }

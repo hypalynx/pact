@@ -8,6 +8,19 @@ pub struct Db {
     pub conn: Connection,
 }
 
+/// Extract token counts from full_response format: "[USAGE]\n{json}\n"
+pub fn extract_tokens(full_response: &str) -> (Option<i64>, Option<i64>) {
+    if let Some(usage_start) = full_response.find("[USAGE]") {
+        let usage_section = &full_response[usage_start + 7..];
+        if let Ok(usage_json) = serde_json::from_str::<serde_json::Value>(usage_section) {
+            let prompt = usage_json.get("prompt_tokens").and_then(|v| v.as_i64());
+            let completion = usage_json.get("completion_tokens").and_then(|v| v.as_i64());
+            return (prompt, completion);
+        }
+    }
+    (None, None)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiLogEntry {
     pub id: i64,
@@ -239,12 +252,14 @@ impl Db {
         error: Option<&str>,
         model_name: Option<&str>,
         provider: Option<&str>,
+        tokens_prompt: Option<i64>,
+        tokens_completion: Option<i64>,
     ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO api_logs (created_at, request_body, response_body, full_response, duration_ms, error_message, model_name, provider)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![now, body, response, full_response, duration_ms as i64, error, model_name, provider],
+            "INSERT INTO api_logs (created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message, model_name, provider)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![now, body, response, full_response, tokens_prompt, tokens_completion, duration_ms as i64, error, model_name, provider],
         )?;
         Ok(())
     }

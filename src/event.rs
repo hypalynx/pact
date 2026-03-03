@@ -230,6 +230,11 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
         {
             #[allow(clippy::collapsible_if)]
             if let Some(db) = &app.db {
+                let (tokens_prompt, tokens_completion) = full_response
+                    .as_ref()
+                    .map(|r| crate::db::extract_tokens(r))
+                    .unwrap_or((None, None));
+
                 if let Err(e) = db.save_api_log(
                     &request_body,
                     response_body.as_deref(),
@@ -238,6 +243,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     error_message.as_deref(),
                     model_name.as_deref(),
                     provider.as_deref(),
+                    tokens_prompt,
+                    tokens_completion,
                 ) {
                     app.set_error(format!("DB error: {}", e));
                 }
