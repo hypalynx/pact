@@ -4,3 +4,4 @@ pact-*
 .cargo/
 coverage.txt
 coverage.json
+.pact/

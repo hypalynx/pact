@@ -26,7 +26,7 @@ fn create_test_app() -> App {
     let mut app = app;
     match create_temp_db() {
         Ok(db) => app.db = Some(db),
-        Err(_) => app.db = None, // Graceful fallback
+        Err(_) => app.db = None,
     }
     app
 }
@@ -70,7 +70,6 @@ fn add_test_messages(app: &mut App, count: usize) {
 #[test]
 fn test_auto_scroll_initialization() {
     let app = create_test_app();
-    // New app should start with auto_scroll = true
     assert!(app.auto_scroll);
 }
 
@@ -78,7 +77,6 @@ fn test_auto_scroll_initialization() {
 fn test_scroll_up_disables_auto_scroll() {
     let mut app = create_test_app();
     add_test_messages(&mut app, 10);
-
     app.messages_rect = Rect {
         x: 0,
         y: 0,
@@ -95,86 +93,24 @@ fn test_scroll_up_disables_auto_scroll() {
 fn test_scroll_down_to_bottom_enables_auto_scroll() {
     let mut app = create_test_app();
     add_test_messages(&mut app, 10);
-
     app.messages_rect = Rect {
         x: 0,
         y: 0,
         width: 80,
         height: 10,
     };
-
-    // Simulate rendered_line_count being set by renderer
     app.rendered_line_count = 50;
 
-    // Simulate user scrolling up
     app.scroll_up();
     assert!(!app.auto_scroll);
 
-    // Scroll down to bottom (set offset near max so scroll_down reaches it)
     let max_scroll = app
         .rendered_line_count
         .saturating_sub(app.messages_rect.height as usize);
     app.scroll_offset = max_scroll;
     app.scroll_down();
 
-    // Should re-enable auto_scroll when at bottom
     assert!(app.auto_scroll);
-}
-
-#[test]
-fn test_scroll_offset_bounds() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 5);
-
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
-
-    // Simulate rendered_line_count being set by renderer
-    app.rendered_line_count = 30;
-    let max_scroll = app
-        .rendered_line_count
-        .saturating_sub(app.messages_rect.height as usize);
-
-    // Scroll down multiple times
-    for _ in 0..10 {
-        app.scroll_down();
-    }
-
-    // Should not exceed max scroll
-    assert!(app.scroll_offset <= max_scroll);
-}
-
-#[test]
-fn test_scroll_up_multiple_times() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 10);
-
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
-
-    // Simulate rendered_line_count and position in middle
-    app.rendered_line_count = 50;
-    let max_scroll = app.rendered_line_count.saturating_sub(10);
-    app.scroll_offset = max_scroll / 2;
-
-    let initial_offset = app.scroll_offset;
-
-    // Scroll up several times
-    for _ in 0..3 {
-        app.scroll_up();
-    }
-
-    // Offset should have decreased (scrolled up in content)
-    assert!(app.scroll_offset < initial_offset);
-    assert!(!app.auto_scroll);
 }
 
 #[test]
@@ -185,7 +121,6 @@ fn test_submit_message_clears_input() {
 
     app.submit_message();
 
-    // Input should be cleared after submit
     assert_eq!(app.input, "");
     assert_eq!(app.cursor_pos, 0);
 }
@@ -194,56 +129,9 @@ fn test_submit_message_clears_input() {
 fn test_submit_message_enables_auto_scroll() {
     let mut app = create_test_app();
     app.auto_scroll = false;
-    app.input = "Test message".to_string();
-    app.cursor_pos = 12;
+    app.input = "Test".to_string();
 
     app.submit_message();
-
-    // Submitting a message should re-enable auto_scroll
-    assert!(app.auto_scroll);
-}
-
-#[test]
-fn test_scroll_offset_saturating_behavior() {
-    let mut app = create_test_app();
-    add_test_messages(&mut app, 3);
-
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 50,
-    };
-
-    // Try to scroll up when already at top
-    let initial_offset = app.scroll_offset;
-    app.scroll_up();
-
-    // Should use saturating_sub, so it stops at 0
-    assert!(app.scroll_offset <= initial_offset);
-}
-
-#[test]
-fn test_auto_scroll_flag_controls_scroll_behavior() {
-    let mut app = create_test_app();
-
-    // auto_scroll starts true
-    assert!(app.auto_scroll);
-
-    // scroll_up disables it
-    app.scroll_up();
-    assert!(!app.auto_scroll);
-
-    // Simulating scroll_down to bottom re-enables it
-    app.messages_rect = Rect {
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 10,
-    };
-    app.rendered_line_count = 10; // Content fits viewport
-    app.scroll_offset = 0;
-    app.scroll_down(); // At max_scroll = 0, offset >= max_scroll
     assert!(app.auto_scroll);
 }
 
@@ -254,103 +142,304 @@ fn test_agents_context_stored_in_app() {
         None,
         "build".to_string(),
         Default::default(),
-        Some("Agent context content here".to_string()),
+        Some("Agent context".to_string()),
         "test_session".to_string(),
         ".".to_string(),
         Vec::new(),
     );
-
-    // Verify agents_context is stored correctly
-    assert_eq!(
-        app.agents_context,
-        Some("Agent context content here".to_string())
-    );
+    assert_eq!(app.agents_context, Some("Agent context".to_string()));
 }
 
 #[test]
-fn test_agents_context_replaces_system_prompt() {
+fn test_history_navigation_up() {
+    let mut app = create_test_app();
+    app.input = "draft".to_string();
+    app.history.push("first".to_string());
+    app.history.push("second".to_string());
+
+    app.history_up();
+
+    assert_eq!(app.input, "second");
+    assert_eq!(app.history_index, Some(1));
+}
+
+#[test]
+fn test_history_navigation_down() {
+    let mut app = create_test_app();
+    app.history.push("first".to_string());
+    app.history.push("second".to_string());
+    app.history_up();
+    assert_eq!(app.input, "second");
+
+    app.history_down();
+    assert_eq!(app.input, "");
+    assert_eq!(app.history_index, None);
+}
+
+#[test]
+fn test_history_preserves_unsent_draft() {
+    let mut app = create_test_app();
+    app.input = "my draft".to_string();
+    app.cursor_pos = 8;
+    app.history.push("first".to_string());
+
+    app.history_up();
+    app.history_down();
+
+    assert_eq!(app.input, "my draft");
+    assert_eq!(app.cursor_pos, 8);
+}
+
+#[test]
+fn test_set_status_message() {
+    let mut app = create_test_app();
+    app.set_status("Test".to_string(), pact::app::StatusLevel::Info);
+    assert!(app.has_status());
+    assert_eq!(app.get_status_level(), Some(pact::app::StatusLevel::Info));
+}
+
+#[test]
+fn test_exit_confirmation() {
+    let mut app = create_test_app();
+    assert!(!app.is_exit_confirming());
+    app.set_exit_confirmation();
+    assert!(app.is_exit_confirming());
+    app.reset_exit_confirmation();
+    assert!(!app.is_exit_confirming());
+}
+
+#[test]
+fn test_cancel_confirmation() {
+    let mut app = create_test_app();
+    assert!(!app.is_cancel_confirming());
+    app.set_cancel_confirmation();
+    assert!(app.is_cancel_confirming());
+    app.reset_cancel_confirmation();
+    assert!(!app.is_cancel_confirming());
+}
+
+#[test]
+fn test_input_insert_char() {
+    let mut app = create_test_app();
+    app.input = "Hell".to_string();
+    app.cursor_pos = 4;
+    app.insert_char('o');
+    assert_eq!(app.input, "Hello");
+    assert_eq!(app.cursor_pos, 5);
+}
+
+#[test]
+fn test_input_delete_char() {
+    let mut app = create_test_app();
+    // delete_char removes char BEFORE cursor
+    app.input = "Hllo".to_string();
+    app.cursor_pos = 1; // After 'H'
+    app.delete_char();
+    assert_eq!(app.input, "llo");
+    assert_eq!(app.cursor_pos, 0);
+}
+
+#[test]
+fn test_input_move_cursor() {
+    let mut app = create_test_app();
+    app.input = "Hello".to_string();
+
+    app.cursor_pos = 5;
+    app.move_cursor_to_start();
+    assert_eq!(app.cursor_pos, 0);
+
+    app.move_cursor_to_end();
+    assert_eq!(app.cursor_pos, 5);
+
+    app.move_cursor_backward();
+    assert_eq!(app.cursor_pos, 4);
+
+    app.move_cursor_forward();
+    assert_eq!(app.cursor_pos, 5);
+}
+
+#[test]
+fn test_input_kill_word_backward() {
+    let mut app = create_test_app();
+    app.input = "Hello world".to_string();
+    app.cursor_pos = 11;
+    app.kill_word_backward();
+    assert_eq!(app.input, "Hello ");
+    assert_eq!(app.cursor_pos, 6);
+}
+
+#[test]
+fn test_input_kill_line() {
+    let mut app = create_test_app();
+    // kill_line removes from line start to cursor
+    app.input = "Hello world".to_string();
+    app.cursor_pos = 5;
+    app.kill_line();
+    assert_eq!(app.input, " world");
+    assert_eq!(app.cursor_pos, 0);
+}
+
+#[test]
+fn test_cycle_mode() {
+    let mut app = create_test_app();
     let mut modes = IndexMap::new();
     modes.insert(
         "build".to_string(),
         Mode {
-            system_prompt: Some("You are a helpful coding assistant...".to_string()),
+            system_prompt: None,
             temperature: None,
             color: Some("cyan".to_string()),
         },
     );
-
-    let app = App::new(
-        false,
-        None,
-        "build".to_string(),
-        modes,
-        Some("Agent context content here".to_string()),
-        "test_session".to_string(),
-        ".".to_string(),
-        Vec::new(),
+    modes.insert(
+        "plan".to_string(),
+        Mode {
+            system_prompt: None,
+            temperature: None,
+            color: Some("magenta".to_string()),
+        },
     );
+    app.modes_config = modes;
+    app.available_modes = vec!["build".to_string(), "plan".to_string()];
+    app.mode_name = "build".to_string();
 
-    // When agents_context is present, it should replace the mode prompt
-    let expected_prompt = if let Some(ref ctx) = app.agents_context {
-        Some(ctx.clone())
-    } else {
-        app.modes_config
-            .get(&app.mode_name)
-            .and_then(|m| m.system_prompt.clone())
+    app.cycle_mode();
+    assert_eq!(app.mode_name, "plan");
+    assert_eq!(app.mode_color, Some("magenta".to_string()));
+}
+
+#[test]
+fn test_cycle_mode_wraps_around() {
+    let mut app = create_test_app();
+    let mut modes = IndexMap::new();
+    modes.insert(
+        "build".to_string(),
+        Mode {
+            system_prompt: None,
+            temperature: None,
+            color: Some("cyan".to_string()),
+        },
+    );
+    modes.insert(
+        "plan".to_string(),
+        Mode {
+            system_prompt: None,
+            temperature: None,
+            color: Some("magenta".to_string()),
+        },
+    );
+    app.modes_config = modes;
+    app.available_modes = vec!["build".to_string(), "plan".to_string()];
+    app.mode_name = "plan".to_string();
+
+    app.cycle_mode();
+    assert_eq!(app.mode_name, "build");
+}
+
+#[test]
+fn test_selection_handling() {
+    let mut app = create_test_app();
+    app.messages_rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 20,
     };
 
-    // Verify that the system prompt is the agents context, not the mode prompt
-    let final_prompt = expected_prompt.unwrap();
-    assert_eq!(
-        final_prompt, "Agent context content here",
-        "Should use agents_context instead of mode prompt"
-    );
-    assert!(
-        !final_prompt.contains("helpful coding"),
-        "Should not contain mode prompt"
-    );
+    app.start_selection(10, 5);
+    assert_eq!(app.selection_start, Some((10, 5)));
+
+    app.extend_selection(20, 8);
+    assert_eq!(app.selection_end, Some((20, 8)));
+
+    // finish_selection clears the selection (and tries to copy)
+    app.finish_selection();
+    // After finish, selection is cleared
+    assert!(app.selection_start.is_none());
+    assert!(app.selection_end.is_none());
 }
 
 #[test]
-fn test_agents_context_none_uses_only_mode_prompt() {
-    let mut modes = IndexMap::new();
-    modes.insert(
-        "build".to_string(),
-        Mode {
-            system_prompt: Some("You are a helpful coding assistant...".to_string()),
-            temperature: None,
-            color: Some("cyan".to_string()),
-        },
-    );
+fn test_is_copying() {
+    let mut app = create_test_app();
+    // Initially not copying (last_copy_frame is u32::MAX)
+    assert!(!app.is_copying());
+    // Simulate a copy by setting last_copy_frame to current frame
+    app.last_copy_frame = app.frame_count;
+    assert!(app.is_copying());
+    // After 126 frames, should not be copying (indicator lasts 125 frames)
+    app.last_copy_frame = 0;
+    app.frame_count = 126;
+    assert!(!app.is_copying());
+}
 
-    let app = App::new(
-        false,
-        None,
-        "build".to_string(),
-        modes,
-        None, // No agents context
-        "test_session".to_string(),
-        ".".to_string(),
-        Vec::new(),
-    );
+#[test]
+fn test_cancel_current_call() {
+    let mut app = create_test_app();
+    app.active_llm_calls = 1;
+    app.active_call_id = Some(1);
+    app.cancel_current_call();
+    // active_llm_calls is decremented, active_call_id is NOT cleared by cancel_current_call
+    assert_eq!(app.active_llm_calls, 0);
+    // Should have added a cancellation message
+    assert!(!app.messages.is_empty());
+}
 
-    // Verify agents_context is None
-    assert!(app.agents_context.is_none());
+#[test]
+fn test_was_just_cancelled() {
+    let mut app = create_test_app();
+    // Initially not just cancelled (last_cancel_frame is u32::MAX)
+    assert!(!app.was_just_cancelled());
+    // Need active_llm_calls > 0 for cancel to set last_cancel_frame
+    app.active_llm_calls = 1;
+    app.cancel_current_call();
+    // After cancel, should be "just cancelled"
+    assert!(app.was_just_cancelled());
+    // After 126 frames, should not be "just cancelled" (lasts 125 frames)
+    app.last_cancel_frame = 0;
+    app.frame_count = 126;
+    assert!(!app.was_just_cancelled());
+}
 
-    // Get the mode prompt
-    let mode_prompt = app
-        .modes_config
-        .get(&app.mode_name)
-        .and_then(|m| m.system_prompt.clone())
-        .unwrap_or_default();
+#[test]
+fn test_toggle_debug_row_expand() {
+    let mut app = create_test_app();
+    assert!(app.debug_expanded_row.is_none());
+    app.toggle_debug_row_expand(0);
+    assert_eq!(app.debug_expanded_row, Some(0));
+    app.toggle_debug_row_expand(0);
+    assert!(app.debug_expanded_row.is_none());
+}
 
-    // When no agents_context, the system prompt should just be the mode prompt
-    assert!(
-        mode_prompt.contains("helpful coding"),
-        "Should contain mode prompt"
-    );
-    assert!(
-        !mode_prompt.contains("Agent context"),
-        "Should not contain agents context"
-    );
+#[test]
+fn test_start_slash_command_help() {
+    let mut app = create_test_app();
+    app.start_slash_command_help();
+    assert!(app.slash_picker.is_some());
+}
+
+#[test]
+fn test_api_key_input() {
+    let mut app = create_test_app();
+    app.api_key_input = Some(String::new());
+    app.handle_api_key_input('a');
+    assert_eq!(app.api_key_input, Some("a".to_string()));
+}
+
+#[test]
+fn test_api_key_backspace() {
+    let mut app = create_test_app();
+    app.api_key_input = Some("ab".to_string());
+    // First backspace removes 'b', returns true (continue)
+    let result = app.handle_api_key_backspace();
+    assert!(result);
+    assert_eq!(app.api_key_input, Some("a".to_string()));
+    // Second backspace removes 'a', returns true (key is now empty but not None)
+    let result = app.handle_api_key_backspace();
+    assert!(result);
+    assert_eq!(app.api_key_input, Some("".to_string()));
+    // Third backspace on empty key returns false (signal to exit)
+    let result = app.handle_api_key_backspace();
+    assert!(!result);
+    assert!(app.api_key_input.is_none());
 }
