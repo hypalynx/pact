@@ -15,7 +15,6 @@
   lines] I am pretty sure we have done this already but need to
   confirm the behaviour
 - [ ] split up ui.rs now it's kinda large
-- [ ] no matches for file picker should just close the file picker, i.e if you press "@ " or "@gmail.com" then the user wants to type that in the message rather than still be using the @ file picker
 - [ ] **Add automated test action for CI/CD pipeline**
   - Run `make test` on every PR/commit to confirm formatting, linting, and all 118 tests pass
 

@@ -1026,6 +1026,49 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
 fn handle_ask_question_key(app: &mut App, key: KeyEvent) -> bool {
     if let Some(modal) = &mut app.pending_ask_question {
         match key.code {
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                modal.cursor_pos = 0;
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                modal.cursor_pos = modal.input.len();
+            }
+            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Kill word backward
+                if modal.cursor_pos > 0 {
+                    let mut pos = modal.cursor_pos;
+                    // Skip trailing spaces
+                    while pos > 0 && modal.input.chars().nth(pos - 1) == Some(' ') {
+                        pos -= 1;
+                    }
+                    // Delete word characters
+                    while pos > 0
+                        && modal
+                            .input
+                            .chars()
+                            .nth(pos - 1)
+                            .is_some_and(|c| !c.is_whitespace())
+                    {
+                        pos -= 1;
+                    }
+                    modal.input.drain(pos..modal.cursor_pos);
+                    modal.cursor_pos = pos;
+                }
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Kill line (from cursor to start)
+                modal.input.drain(0..modal.cursor_pos);
+                modal.cursor_pos = 0;
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if modal.cursor_pos < modal.input.len() {
+                    modal.cursor_pos += 1;
+                }
+            }
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if modal.cursor_pos > 0 {
+                    modal.cursor_pos -= 1;
+                }
+            }
             KeyCode::Char(c) => {
                 modal.input.insert(modal.cursor_pos, c);
                 modal.cursor_pos += 1;

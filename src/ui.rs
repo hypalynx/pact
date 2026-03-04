@@ -120,7 +120,12 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
         || app.pending_bash_confirm.is_some();
 
     draw_messages(app, frame, is_modal_open);
-    draw_input(app, frame, is_modal_open);
+    draw_input(
+        app,
+        frame,
+        is_modal_open,
+        app.pending_ask_question.is_some(),
+    );
     draw_status(app, frame, status_area, is_modal_open);
 
     // Note: We intentionally don't draw a solid overlay here.
@@ -513,10 +518,18 @@ fn draw_messages(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
     }
 }
 
-fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
-    // Dimmed input background when modal is open
-    let input_bg = if is_dimmed { DIM_BG } else { Color::Black };
-    let input_fg = if is_dimmed { DIM_TEXT } else { Color::White };
+fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool, ask_question_active: bool) {
+    // Dimmed input background when modal is open or ask_question is active
+    let input_bg = if is_dimmed || ask_question_active {
+        DIM_BG
+    } else {
+        Color::Black
+    };
+    let input_fg = if is_dimmed || ask_question_active {
+        DIM_TEXT
+    } else {
+        Color::White
+    };
 
     let margin = Paragraph::new("").style(Style::default().bg(input_bg));
     frame.render_widget(margin, app.input_rect);
@@ -558,7 +571,7 @@ fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
 
     let mut lines: Vec<Line> = Vec::new();
     for line_text in wrapped_lines {
-        let spans = colorize_input(&line_text, is_dimmed);
+        let spans = colorize_input(&line_text, is_dimmed || ask_question_active);
         lines.push(Line::from(spans));
     }
 
@@ -568,7 +581,8 @@ fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
         .scroll((app.input_scroll_offset as u16, 0));
     frame.render_widget(input, inner);
 
-    if app.active_llm_calls == 0 {
+    // Hide cursor when ask_question is active or when LLM is running
+    if app.active_llm_calls == 0 && !ask_question_active {
         // Adjust cursor Y position based on scroll
         let visible_cursor_y = cursor_y.saturating_sub(app.input_scroll_offset);
         let cursor_pos = ratatui::layout::Position {
@@ -1126,14 +1140,13 @@ fn draw_ask_question(app: &App, frame: &mut Frame) {
                 }
             }
 
-            // Input field with cursor
+            // Input field with cursor (no prefix)
             lines.push(Line::from("")); // Blank line before input
-            let input_prompt = format!("> {}", modal.input);
             let cursor_style = Style::default().bg(Color::DarkGray).fg(Color::White);
             let mut input_spans = Vec::new();
 
-            for (idx, ch) in input_prompt.chars().enumerate() {
-                let is_cursor = idx == modal.cursor_pos + 2; // +2 for "> "
+            for (idx, ch) in modal.input.chars().enumerate() {
+                let is_cursor = idx == modal.cursor_pos;
                 let style = if is_cursor {
                     cursor_style
                 } else {
