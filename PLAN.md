@@ -19,7 +19,6 @@
 - paste just 'types' into the input box but we should be able to
   handle this better (you see each character input
   sequentially)
-- [x] syntax highlighting in diffs with line numbers and context (+/- 5 lines)
 - [ ] up/down should only go up/down message history if you are at the top/bottom of the current message input content, the latest message (unsent) should be preserved so you can return to it
 - [ ] ctrl + p to cycle through providers (like we can already in the control panel)
 - [ ] split up ui.rs now it's kinda large

@@ -99,6 +99,8 @@ pub struct App {
     pub history_index: Option<usize>,
     pub input: String,
     pub cursor_pos: usize,
+    pub unsent_draft: String,       // Preserves unsent input when navigating history
+    pub unsent_cursor_pos: usize,   // Preserves cursor pos for unsent input
     pub input_rect: Rect,
     pub messages_rect: Rect,
     pub rx: mpsc::Receiver<LlmEvent>,
@@ -204,6 +206,8 @@ impl App {
             history_index: None,
             input: String::new(),
             cursor_pos: 0,
+            unsent_draft: String::new(),
+            unsent_cursor_pos: 0,
             input_rect: Rect::default(),
             messages_rect: Rect::default(),
             rx,
@@ -327,6 +331,8 @@ impl App {
         };
         self.messages.push(msg.clone());
         self.history_index = None;
+        self.unsent_draft.clear();
+        self.unsent_cursor_pos = 0;
         // Save user message to database if available
         if let Some(db) = &self.db {
             let is_first_user_message = self
@@ -429,10 +435,122 @@ impl App {
         });
     }
 
+    /// Get the available width for input text wrapping
+    fn get_input_width(&self) -> usize {
+        const INPUT_HORIZONTAL_MARGIN: u16 = 3;
+        (self.input_rect.width.saturating_sub(INPUT_HORIZONTAL_MARGIN * 2)) as usize
+    }
+
+    /// Get visual cursor position (col, row) and total wrapped lines
+    fn get_cursor_visual_position(&self) -> (usize, usize, usize) {
+        let width = self.get_input_width();
+        let (col, row) = crate::text::cursor_position(&self.input, self.cursor_pos, width);
+        let total_lines = crate::text::wrap_text(&self.input, width).len().max(1);
+        (col, row, total_lines)
+    }
+
+    /// Move cursor up within the input (without changing history)
+    fn move_cursor_up_in_input(&mut self) {
+        let (col, row, _total_lines) = self.get_cursor_visual_position();
+
+        // Only move if not on first line
+        if row == 0 {
+            return;
+        }
+
+        self.move_cursor_to_visual_row(row - 1, col);
+    }
+
+    /// Move cursor down within the input (without changing history)
+    fn move_cursor_down_in_input(&mut self) {
+        let (col, row, total_lines) = self.get_cursor_visual_position();
+
+        // Only move if not on last line
+        if row >= total_lines - 1 {
+            return;
+        }
+
+        self.move_cursor_to_visual_row(row + 1, col);
+    }
+
+    /// Move cursor to a specific visual row, attempting to maintain column position
+    fn move_cursor_to_visual_row(&mut self, target_row: usize, target_col: usize) {
+        let width = self.get_input_width();
+
+        // Find the first byte position in the target row
+        // Then move col characters into that row
+        let mut found_row_start = None;
+
+        for byte_offset in 0..=self.input.len() {
+            let (_, visual_row) = crate::text::cursor_position(&self.input, byte_offset, width);
+
+            if visual_row == target_row {
+                found_row_start = Some(byte_offset);
+                break;
+            }
+        }
+
+        if let Some(row_start) = found_row_start {
+            // Found the start of target row, now move target_col characters in
+            for byte_offset in row_start..=self.input.len() {
+                let (col, row) = crate::text::cursor_position(&self.input, byte_offset, width);
+
+                // Stop if we've gone past the target row
+                if row != target_row {
+                    // Use the previous valid position
+                    self.cursor_pos = byte_offset.saturating_sub(1);
+                    return;
+                }
+
+                // Stop if we've reached or passed the target column
+                if col >= target_col {
+                    self.cursor_pos = byte_offset;
+                    return;
+                }
+            }
+
+            // If we've exhausted the input, place cursor at end of target row
+            self.cursor_pos = self.input.len();
+        }
+    }
+
+    /// Handle up arrow: move cursor up in input if possible, otherwise navigate history
+    pub fn handle_up_key(&mut self) {
+        let (_col, row, _total_lines) = self.get_cursor_visual_position();
+
+        // If not on first line, move up within input
+        if row > 0 {
+            self.move_cursor_up_in_input();
+        } else {
+            // On first line, navigate history
+            self.history_up();
+        }
+    }
+
+    /// Handle down arrow: move cursor down in input if possible, otherwise navigate history
+    pub fn handle_down_key(&mut self) {
+        let (_col, row, total_lines) = self.get_cursor_visual_position();
+
+        // If not on last line, move down within input
+        if row < total_lines - 1 {
+            self.move_cursor_down_in_input();
+        } else {
+            // On last line, navigate history
+            self.history_down();
+        }
+    }
+
     pub fn history_up(&mut self) {
         if self.history.is_empty() {
             return;
         }
+
+        // Save current input as draft if this is the first navigation
+        if self.history_index.is_none() {
+            self.unsent_draft = self.input.clone();
+            self.unsent_cursor_pos = self.cursor_pos;
+        }
+
         let new_index = match self.history_index {
             None => self.history.len() - 1,
             Some(0) => return,
@@ -448,8 +566,9 @@ impl App {
             None => return,
             Some(i) if i >= self.history.len() - 1 => {
                 self.history_index = None;
-                self.input.clear();
-                self.cursor_pos = 0;
+                // Restore the unsent draft
+                self.input = self.unsent_draft.clone();
+                self.cursor_pos = self.unsent_cursor_pos;
                 return;
             }
             Some(i) => i + 1,
@@ -1203,6 +1322,8 @@ impl App {
                     self.messages.clear();
                     self.history.clear();
                     self.history_index = None;
+                    self.unsent_draft.clear();
+                    self.unsent_cursor_pos = 0;
                     self.auto_scroll = true;
                     // Reset token counts when starting a new session
                     self.total_input_tokens = 0;
@@ -1229,6 +1350,8 @@ impl App {
                     self.messages.clear();
                     self.history.clear();
                     self.history_index = None;
+                    self.unsent_draft.clear();
+                    self.unsent_cursor_pos = 0;
                     self.auto_scroll = true;
                     if let Some(db) = &self.db {
                         let _ = db.clear_session_messages(&self.session_id);

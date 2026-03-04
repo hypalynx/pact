@@ -529,10 +529,10 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
             }
         }
         KeyCode::Up => {
-            app.history_up();
+            app.handle_up_key();
         }
         KeyCode::Down => {
-            app.history_down();
+            app.handle_down_key();
         }
         KeyCode::PageUp => {
             app.scroll_up();
