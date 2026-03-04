@@ -1,7 +1,12 @@
 # Pact AI Agent Instructions
 
 ## Testing
+
 - **Always run `make test` to confirm code changes and run the test suite.** This checks formatting, linting, and runs all 118 tests.
+- Unit tests should be written inline in a `tests` module inside
+  the file under test.
+- Integration tests should be under the `tests` directory at the
+  root of this project.
 
 ## Debugging & Database
 - When asked to look in the logs or debug, you should look in the
