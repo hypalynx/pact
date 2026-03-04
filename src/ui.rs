@@ -34,6 +34,7 @@ const DIM_STATUS: Color = Color::Rgb(60, 60, 60); // Dark gray for status bar el
 const DIM_MODE: Color = Color::Rgb(100, 100, 100); // Grayed out mode color
 const DIM_ERROR: Color = Color::Rgb(100, 0, 0); // Muted red for errors
 const DIM_COPYING: Color = Color::Rgb(100, 100, 0); // Muted yellow for copy notification
+const DIM_WARN: Color = Color::Rgb(100, 100, 0); // Muted yellow for warnings
 const DIM_AT: Color = Color::Rgb(100, 100, 0); // Muted @mention highlight
 const DIM_SCROLLBAR: Color = Color::Rgb(40, 40, 40); // Darker scrollbar when dimmed
 
@@ -655,6 +656,8 @@ fn draw_control_panel(app: &App, frame: &mut Frame) {
 }
 
 fn draw_status(app: &App, frame: &mut Frame, area: Rect, is_dimmed: bool) {
+    use crate::app::StatusLevel;
+
     // Dimmed colors when modal is open
     let normal_fg = if is_dimmed {
         DIM_STATUS
@@ -670,6 +673,8 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect, is_dimmed: bool) {
             .unwrap_or(Color::White)
     };
     let error_color = if is_dimmed { DIM_ERROR } else { Color::Red };
+    let warn_color = if is_dimmed { DIM_WARN } else { Color::Yellow };
+    let info_color = if is_dimmed { DIM_STATUS } else { Color::Cyan };
     let copying_color = if is_dimmed {
         DIM_COPYING
     } else {
@@ -678,13 +683,15 @@ fn draw_status(app: &App, frame: &mut Frame, area: Rect, is_dimmed: bool) {
 
     let mut left_spans = Vec::new();
 
-    // Show error notification if recent, otherwise copy notification, otherwise normal status
-    if app.has_error() {
-        if let Some(ref error) = app.error_message {
-            left_spans.push(Span::styled(
-                error.to_string(),
-                Style::default().fg(error_color),
-            ));
+    // Show status notification if recent, otherwise copy notification, otherwise normal status
+    if app.has_status() {
+        if let Some((ref msg, ref level)) = app.status_message {
+            let color = match level {
+                StatusLevel::Error => error_color,
+                StatusLevel::Warn => warn_color,
+                StatusLevel::Info => info_color,
+            };
+            left_spans.push(Span::styled(msg.to_string(), Style::default().fg(color)));
         }
     } else if app.is_exit_confirming() {
         left_spans.push(Span::styled(

@@ -6,6 +6,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StatusLevel {
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PanelState {
     None,
     ControlPanel,
@@ -121,8 +128,8 @@ pub struct App {
     pub selection_end: Option<(u16, u16)>,
     pub last_copy_frame: u32,
     pub input_scroll_offset: usize,
-    pub error_message: Option<String>,
-    pub last_error_frame: u32,
+    pub status_message: Option<(String, StatusLevel)>,
+    pub last_status_frame: u32,
     pub exit_confirm_frame: u32,
     pub cancel_confirm_frame: u32,
     pub last_cancel_frame: u32,
@@ -226,8 +233,8 @@ impl App {
             selection_end: None,
             last_copy_frame: u32::MAX, // Initialize to max so it's never "recent" on startup
             input_scroll_offset: 0,
-            error_message: db_error,
-            last_error_frame: u32::MAX,
+            status_message: db_error.map(|e| (e, StatusLevel::Error)),
+            last_status_frame: u32::MAX,
             exit_confirm_frame: u32::MAX,
             cancel_confirm_frame: u32::MAX,
             last_cancel_frame: u32::MAX,
@@ -294,8 +301,10 @@ impl App {
 
         self.active_provider = Some(next_provider.clone());
         self.api_endpoint = next_provider.endpoint.clone();
-        self.error_message = Some(format!("Switched to provider: {}", next_provider.name));
-        self.last_error_frame = self.frame_count;
+        self.set_status(
+            format!("Switched to provider: {}", next_provider.name),
+            StatusLevel::Info,
+        );
     }
 
     pub fn submit_message(&mut self) {
@@ -727,18 +736,36 @@ impl App {
         self.frame_count.saturating_sub(self.last_copy_frame) < 125
     }
 
-    pub fn set_error(&mut self, msg: impl Into<String>) {
-        self.error_message = Some(msg.into());
-        self.last_error_frame = self.frame_count;
+    pub fn set_status(&mut self, msg: impl Into<String>, level: StatusLevel) {
+        self.status_message = Some((msg.into(), level));
+        self.last_status_frame = self.frame_count;
     }
 
-    pub fn has_error(&self) -> bool {
-        // Show error for ~2 seconds (roughly 125 frames at 16ms)
-        // Don't show if we've never errored (last_error_frame is u32::MAX)
-        if self.last_error_frame == u32::MAX {
+    pub fn has_status(&self) -> bool {
+        // Show status for ~2 seconds (roughly 125 frames at 16ms)
+        // Don't show if we've never set status (last_status_frame is u32::MAX)
+        if self.last_status_frame == u32::MAX {
             return false;
         }
-        self.frame_count.saturating_sub(self.last_error_frame) < 125
+        self.frame_count.saturating_sub(self.last_status_frame) < 125
+    }
+
+    pub fn get_status_level(&self) -> Option<StatusLevel> {
+        if self.has_status() {
+            self.status_message.as_ref().map(|(_, level)| *level)
+        } else {
+            None
+        }
+    }
+
+    #[deprecated(note = "Use set_status(msg, StatusLevel::Error) instead")]
+    pub fn set_error(&mut self, msg: impl Into<String>) {
+        self.set_status(msg, StatusLevel::Error);
+    }
+
+    #[deprecated(note = "Use has_status() instead")]
+    pub fn has_error(&self) -> bool {
+        self.has_status()
     }
 
     pub fn is_exit_confirming(&self) -> bool {
@@ -1104,11 +1131,11 @@ impl App {
                 } else if entry.starts_with("/connect -") {
                     // User selected /connect from help
                     self.api_key_input = Some(String::new());
+                    // Remove the slash command from input
                     let slash_start = picker.slash_start;
                     self.input.drain(slash_start..self.cursor_pos);
                     self.cursor_pos = slash_start;
-                    self.error_message = Some("Enter API key (press Enter when done)".to_string());
-                    self.last_error_frame = self.frame_count;
+                    self.set_status("Enter API key (press Enter when done)", StatusLevel::Info);
                     return;
                 } else if entry.starts_with("/new -") {
                     // User selected /new from help
@@ -1156,8 +1183,10 @@ impl App {
                         let slash_start = picker.slash_start;
                         self.input.drain(slash_start..self.cursor_pos);
                         self.cursor_pos = slash_start;
-                        self.error_message = Some(format!("Switched to model: {}", full_model_id));
-                        self.last_error_frame = self.frame_count;
+                        self.set_status(
+                            format!("Switched to model: {}", full_model_id),
+                            StatusLevel::Info,
+                        );
                     }
                 }
                 SlashCommand::Connect => {
@@ -1167,8 +1196,7 @@ impl App {
                     let slash_start = picker.slash_start;
                     self.input.drain(slash_start..self.cursor_pos);
                     self.cursor_pos = slash_start;
-                    self.error_message = Some("Enter API key (press Enter when done)".to_string());
-                    self.last_error_frame = self.frame_count;
+                    self.set_status("Enter API key (press Enter when done)", StatusLevel::Info);
                 }
                 SlashCommand::New => {
                     // Start a new session: generate new session ID, clear messages, reset tokens
@@ -1191,8 +1219,10 @@ impl App {
                     let slash_start = picker.slash_start;
                     self.input.drain(slash_start..self.cursor_pos);
                     self.cursor_pos = slash_start;
-                    self.error_message = Some(format!("Started new session: {}", self.session_id));
-                    self.last_error_frame = self.frame_count;
+                    self.set_status(
+                        format!("Started new session: {}", self.session_id),
+                        StatusLevel::Info,
+                    );
                 }
                 SlashCommand::Clear => {
                     // Clear current session context but keep the session ID
@@ -1207,8 +1237,7 @@ impl App {
                     let slash_start = picker.slash_start;
                     self.input.drain(slash_start..self.cursor_pos);
                     self.cursor_pos = slash_start;
-                    self.error_message = Some("Cleared current session".to_string());
-                    self.last_error_frame = self.frame_count;
+                    self.set_status("Cleared current session", StatusLevel::Info);
                 }
             }
         }
@@ -1248,8 +1277,10 @@ impl App {
                 let _ = db.update_provider_api_key(&provider_name, &key);
             }
 
-            self.error_message = Some(format!("API key set for {}", provider_name));
-            self.last_error_frame = self.frame_count;
+            self.set_status(
+                format!("API key set for {}", provider_name),
+                StatusLevel::Info,
+            );
         }
     }
 }

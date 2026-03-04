@@ -73,8 +73,10 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             app.active_call_id = None;
 
             // Show error in status bar for 5 seconds (300 frames at 60fps)
-            app.error_message = Some(format!("Error: {}", &e[..e.len().min(50)]));
-            app.last_error_frame = app.frame_count;
+            app.set_status(
+                format!("Error: {}", &e[..e.len().min(50)]),
+                crate::app::StatusLevel::Error,
+            );
         }
         LlmEvent::Usage {
             input_tokens,
@@ -246,7 +248,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     tokens_prompt,
                     tokens_completion,
                 ) {
-                    app.set_error(format!("DB error: {}", e));
+                    app.set_status(format!("DB error: {}", e), crate::app::StatusLevel::Error);
                 }
             }
         }
