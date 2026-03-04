@@ -1,5 +1,7 @@
 use crate::app::App;
 use crate::text::{cursor_position, render_message, wrap_text};
+use crate::ui::colors::*;
+use crate::ui::layout::*;
 use crate::utils::{format_tokens, get_git_branch, get_pwd_display};
 use ratatui::Frame;
 use ratatui::{
@@ -10,49 +12,8 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-// Input box layout constants
-const INPUT_MIN_HEIGHT: u16 = 3;
-const INPUT_MAX_HEIGHT: u16 = 20;
-const INPUT_HORIZONTAL_MARGIN: u16 = 3;
-const INPUT_VERTICAL_MARGIN: u16 = 1;
-
-// Control panel constants
-const CONTROL_PANEL_WIDTH: u16 = 40;
-
-// Debug modal constants
-const DEBUG_MODAL_WIDTH_PERCENT: u16 = 9; // out of 10
-const DEBUG_MODAL_HEIGHT_PERCENT: u16 = 8; // out of 10
-const DEBUG_MODAL_MIN_WIDTH: u16 = 40;
-const DEBUG_MODAL_MIN_HEIGHT: u16 = 10;
-const DEBUG_FILE_PICKER_MAX_VISIBLE: usize = 8;
-
-// Dimmed color palette (used when modal is open)
-const DIM_BG: Color = Color::Rgb(20, 20, 20); // Darker background for input/message boxes
-const DIM_TEXT: Color = Color::DarkGray; // Muted text color
-const DIM_THINKING: Color = Color::Rgb(60, 60, 60); // Even darker for thinking/tool text
-const DIM_STATUS: Color = Color::Rgb(60, 60, 60); // Dark gray for status bar elements
-const DIM_MODE: Color = Color::Rgb(100, 100, 100); // Grayed out mode color
-const DIM_ERROR: Color = Color::Rgb(100, 0, 0); // Muted red for errors
-const DIM_COPYING: Color = Color::Rgb(100, 100, 0); // Muted yellow for copy notification
-const DIM_WARN: Color = Color::Rgb(100, 100, 0); // Muted yellow for warnings
-const DIM_AT: Color = Color::Rgb(100, 100, 0); // Muted @mention highlight
-const DIM_SCROLLBAR: Color = Color::Rgb(40, 40, 40); // Darker scrollbar when dimmed
-
-fn parse_color(color_str: &str) -> Color {
-    match color_str.to_lowercase().as_str() {
-        "black" => Color::Black,
-        "red" => Color::Red,
-        "green" => Color::Green,
-        "yellow" => Color::Yellow,
-        "blue" => Color::Blue,
-        "magenta" => Color::Magenta,
-        "cyan" => Color::Cyan,
-        "white" => Color::White,
-        "gray" | "grey" => Color::Gray,
-        "dark_gray" | "darkgray" | "dark-gray" => Color::DarkGray,
-        _ => Color::White,
-    }
-}
+pub mod colors;
+pub mod layout;
 
 fn highlight_line_range(line: Line<'static>, char_start: usize, char_end: usize) -> Line<'static> {
     let mut new_spans = Vec::new();

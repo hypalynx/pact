@@ -25,6 +25,8 @@
   (plan usually but whatever is set in config)
 - [ ] writing an .md file was blocked (4th March around 21:16pm)
 - [ ] need to include session ids in the debug menu
+- [ ] context is still not counting correctly LOL I get like 700k
+  in a kimi session which seems very wrong.
 
 ### Recently Fixed
 - [x] AskUserQuestion UI - was showing as hidden modal with dimmed screen (Mar 4, 2026)
