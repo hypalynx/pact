@@ -17,9 +17,26 @@
 - [ ] split up ui.rs now it's kinda large
 - [ ] **Add automated test action for CI/CD pipeline**
   - Run `make test` on every PR/commit to confirm formatting, linting, and all 118 tests pass
+- [ ] when the LLM is busy, I can't see my cursor (though I can
+  type) in the input box
+- [ ] thinking text also seems to come back as markdown so we
+  might as well format it too!
+- [ ] /new or /clear should default back to the default mode
+  (plan usually but whatever is set in config)
+- [ ] writing an .md file was blocked (4th March around 21:16pm)
+- [ ] need to include session ids in the debug menu
 
 ### Recently Fixed
 - [x] AskUserQuestion UI - was showing as hidden modal with dimmed screen (Mar 4, 2026)
   - Fixed: moved from centered modal to input area replacement
   - Now draws above the input box like bash_confirm
   - Removed from is_modal_open check so screen doesn't dim
+
+Bad tool call example:
+<tool_call>
+<function=Read>
+<parameter=filePath>
+src/lib.rs
+</parameter>
+</function>
+</tool_call>
