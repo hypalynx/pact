@@ -24,3 +24,8 @@ _Purposely restricting these to focus on
   - Qwen 3 4b Instruct 2507
   - GPT OSS 20b
   - Llama 3.2 1b
+
+- Optimised Targets
+  - Qwen 3.5 35b a3b (good enough but slow on linux laptop)
+  - Gemini 3 Flash (best price/performance for Cloud)
+  - Kimi K2.5 (decent price/performance for Cloud)

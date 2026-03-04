@@ -255,4 +255,47 @@ mod tests {
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content, "line1\nline2");
     }
+
+    #[test]
+    fn test_colorize_input_dimmed() {
+        let spans = colorize_input("@file", true);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "@file");
+    }
+
+    #[test]
+    fn test_colorize_input_mention_with_numbers() {
+        let spans = colorize_input("check @file123", false);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[1].content, "@file123");
+    }
+
+    #[test]
+    fn test_colorize_input_mention_with_underscore() {
+        let spans = colorize_input("see @my_file", false);
+        assert_eq!(spans[1].content, "@my_file");
+    }
+
+    #[test]
+    fn test_colorize_input_consecutive_mentions() {
+        let spans = colorize_input("@file1 @file2", false);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].content, "@file1");
+        assert_eq!(spans[1].content, " ");
+        assert_eq!(spans[2].content, "@file2");
+    }
+
+    #[test]
+    fn test_colorize_input_mention_at_end_no_space() {
+        let spans = colorize_input("text@file", false);
+        // @ not preceded by space - still detected as mention
+        assert_eq!(spans.len(), 2);
+    }
+
+    #[test]
+    fn test_colorize_input_multiple_special_chars() {
+        let spans = colorize_input("see @path/to/file_name-test.txt", false);
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[1].content, "@path/to/file_name-test.txt");
+    }
 }

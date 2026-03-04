@@ -353,3 +353,363 @@ pub fn render_message(text: &str, width: usize) -> Vec<(String, Vec<Span<'static
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== wrap_text tests ====================
+
+    #[test]
+    fn test_wrap_text_empty() {
+        let lines = wrap_text("", 80);
+        // Empty string produces vec![""] because split('\n') returns one empty string
+        assert_eq!(lines, vec![""]);
+    }
+
+    #[test]
+    fn test_wrap_text_single_word() {
+        let lines = wrap_text("hello", 80);
+        assert_eq!(lines, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_wrap_text_no_wrap_needed() {
+        let lines = wrap_text("hello world", 80);
+        assert_eq!(lines, vec!["hello world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_simple_wrap() {
+        let lines = wrap_text("hello world", 5);
+        assert_eq!(lines, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_multiple_lines() {
+        let lines = wrap_text("one two three four", 8);
+        assert_eq!(lines, vec!["one two", "three", "four"]);
+    }
+
+    #[test]
+    fn test_wrap_text_preserves_empty_lines() {
+        let lines = wrap_text("hello\n\nworld", 80);
+        assert_eq!(lines, vec!["hello", "", "world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_long_word_overflow() {
+        // Word longer than width gets its own line (overflows visually)
+        let lines = wrap_text("supercalifragilistic", 10);
+        assert_eq!(lines, vec!["supercalifragilistic"]);
+    }
+
+    #[test]
+    fn test_wrap_text_exact_width() {
+        // Word exactly at width boundary
+        let lines = wrap_text("hello world", 5);
+        assert_eq!(lines, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_width_one() {
+        // Extreme case: width of 1
+        let lines = wrap_text("ab cd", 1);
+        // Each word gets its own line, each char would overflow but we keep words
+        assert_eq!(lines, vec!["ab", "cd"]);
+    }
+
+    #[test]
+    fn test_wrap_text_multiple_paragraphs() {
+        let lines = wrap_text("first para\n\nsecond para here", 10);
+        assert_eq!(lines, vec!["first para", "", "second", "para here"]);
+    }
+
+    #[test]
+    fn test_wrap_text_leading_trailing_whitespace() {
+        // split_whitespace() handles this
+        let lines = wrap_text("  hello  world  ", 80);
+        assert_eq!(lines, vec!["hello world"]);
+    }
+
+    // ==================== parse_markdown_line tests ====================
+
+    #[test]
+    fn test_parse_markdown_line_empty() {
+        let spans = parse_markdown_line("");
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn test_parse_markdown_line_plain_text() {
+        let spans = parse_markdown_line("hello world");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello world");
+    }
+
+    #[test]
+    fn test_parse_markdown_line_bold() {
+        let spans = parse_markdown_line("**bold text**");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "bold text");
+    }
+
+    #[test]
+    fn test_parse_markdown_line_italic() {
+        let spans = parse_markdown_line("*italic text*");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "italic text");
+    }
+
+    #[test]
+    fn test_parse_markdown_line_inline_code() {
+        let spans = parse_markdown_line("`code`");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "code");
+    }
+
+    #[test]
+    fn test_parse_markdown_line_mixed() {
+        let spans = parse_markdown_line("hello **bold** and *italic* and `code`");
+        assert_eq!(spans.len(), 6);
+        assert_eq!(spans[0].content, "hello ");
+        assert_eq!(spans[1].content, "bold");
+        assert_eq!(spans[2].content, " and ");
+        assert_eq!(spans[3].content, "italic");
+        assert_eq!(spans[4].content, " and ");
+        assert_eq!(spans[5].content, "code");
+    }
+
+    #[test]
+    fn test_parse_markdown_line_double_asterisk_bold() {
+        // __bold__ style
+        let spans = parse_markdown_line("__bold__");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "bold");
+    }
+
+    #[test]
+    fn test_parse_markdown_line_underscore_italic() {
+        // _italic_ style
+        let spans = parse_markdown_line("_italic_");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "italic");
+    }
+
+    // ==================== cursor_position tests ====================
+
+    #[test]
+    fn test_cursor_position_empty() {
+        let (x, y) = cursor_position("", 0, 80);
+        assert_eq!((x, y), (0, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_start() {
+        let (x, y) = cursor_position("hello world", 0, 80);
+        assert_eq!((x, y), (0, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_middle() {
+        let (x, y) = cursor_position("hello world", 5, 80);
+        assert_eq!((x, y), (5, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_end() {
+        let (x, y) = cursor_position("hello", 5, 80);
+        assert_eq!((x, y), (5, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_after_space() {
+        let (x, y) = cursor_position("hello world", 6, 80);
+        assert_eq!((x, y), (6, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_wrapped() {
+        // "hello world" with width 8 wraps to ["hello", "world"]
+        // Cursor at position 6 (at the space between "hello" and "world")
+        // The space is at position 5, so we're just after the word "hello"
+        let (x, y) = cursor_position("hello world", 6, 8);
+        // "hello " wraps at width 8, "hello" is 5 chars + space = would exceed
+        // Actually the space is stripped by wrap_text, so cursor is at end of line 0
+        assert_eq!((x, y), (6, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_at_newline() {
+        // Cursor right after \n should be at start of new line
+        let (x, y) = cursor_position("hello\nworld", 6, 80);
+        assert_eq!((x, y), (0, 1));
+    }
+
+    #[test]
+    fn test_cursor_position_trailing_whitespace() {
+        // Cursor at trailing space that gets stripped
+        let (x, y) = cursor_position("hello ", 6, 80);
+        assert_eq!((x, y), (6, 0));
+    }
+
+    #[test]
+    fn test_cursor_position_multiline() {
+        let (x, y) = cursor_position("line1\nline2\nline3", 12, 80);
+        // "line1\nline2\n" = 12 chars, cursor at position 12 should be at start of line3
+        assert_eq!((x, y), (0, 2));
+    }
+
+    #[test]
+    fn test_cursor_position_beyond_length() {
+        // Cursor position beyond string length
+        let (x, y) = cursor_position("hi", 10, 80);
+        assert_eq!((x, y), (2, 0));
+    }
+
+    // ==================== highlight_diff tests ====================
+
+    #[test]
+    fn test_highlight_diff_empty() {
+        let lines = highlight_diff("");
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_highlight_diff_addition() {
+        let lines = highlight_diff("+added line");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].len(), 1);
+        assert_eq!(lines[0][0].content, "+added line");
+    }
+
+    #[test]
+    fn test_highlight_diff_removal() {
+        let lines = highlight_diff("-removed line");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0][0].content, "-removed line");
+    }
+
+    #[test]
+    fn test_highlight_diff_file_header_plus() {
+        let lines = highlight_diff("+++ b/src/main.rs");
+        assert_eq!(lines[0][0].content, "+++ b/src/main.rs");
+    }
+
+    #[test]
+    fn test_highlight_diff_file_header_minus() {
+        let lines = highlight_diff("--- a/src/main.rs");
+        assert_eq!(lines[0][0].content, "--- a/src/main.rs");
+    }
+
+    #[test]
+    fn test_highlight_diff_hunk_header() {
+        let lines = highlight_diff("@@ -1,5 +1,5 @@");
+        assert_eq!(lines[0][0].content, "@@ -1,5 +1,5 @@");
+    }
+
+    #[test]
+    fn test_highlight_diff_context() {
+        let lines = highlight_diff(" context line");
+        assert_eq!(lines[0][0].content, " context line");
+    }
+
+    #[test]
+    fn test_highlight_diff_mixed() {
+        let diff = "--- a/file.txt\n+++ b/file.txt\n@@ -1,3 +1,3 @@\n context\n-removed\n+added";
+        let lines = highlight_diff(diff);
+        // File headers (2) + hunk header (1) + context (1) + removed (1) + added (1) = 6 lines
+        assert_eq!(lines.len(), 6);
+    }
+
+    // ==================== highlight_code_block tests ====================
+
+    #[test]
+    fn test_highlight_code_block_rust() {
+        let lines = highlight_code_block("fn main() {}", "rust");
+        assert_eq!(lines.len(), 1);
+        // Should have multiple spans for syntax highlighting
+        assert!(!lines[0].is_empty());
+    }
+
+    #[test]
+    fn test_highlight_code_block_unknown_lang() {
+        // Unknown language falls back to plain text
+        let lines = highlight_code_block("some text", "unknown_lang");
+        assert_eq!(lines.len(), 1);
+    }
+
+    #[test]
+    fn test_highlight_code_block_empty() {
+        let lines = highlight_code_block("", "rust");
+        // Empty code produces no lines since .lines() returns empty iterator
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_highlight_code_block_multiline() {
+        let code = "line1\nline2\nline3";
+        let lines = highlight_code_block(code, "text");
+        assert_eq!(lines.len(), 3);
+    }
+
+    #[test]
+    fn test_highlight_code_block_diff() {
+        // Diff language uses special highlighting
+        let lines = highlight_code_block("+added\n-removed", "diff");
+        assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
+    fn test_highlight_code_block_patch() {
+        // "patch" is also treated as diff
+        let lines = highlight_code_block("+added", "patch");
+        assert_eq!(lines.len(), 1);
+    }
+
+    // ==================== render_message tests ====================
+
+    #[test]
+    fn test_render_message_plain_text() {
+        let result = render_message("hello world", 80);
+        assert!(!result.is_empty());
+        assert_eq!(result[0].0, "hello world");
+    }
+
+    #[test]
+    fn test_render_message_empty() {
+        let result = render_message("", 80);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_render_message_with_code_block() {
+        let msg = "Some text\n```rust\nfn main() {}\n```\nMore text";
+        let result = render_message(msg, 80);
+        // Should have lines for prose, code, and more prose
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_message_code_block_no_lang() {
+        let msg = "```\nplain code\n```";
+        let result = render_message(msg, 80);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_message_multiple_code_blocks() {
+        let msg = "```rust\ncode1\n```\ntext\n```python\ncode2\n```";
+        let result = render_message(msg, 80);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn test_render_message_wrapping() {
+        let msg =
+            "this is a very long line that should wrap to multiple lines when the width is small";
+        let result = render_message(msg, 20);
+        // Should produce multiple wrapped lines
+        assert!(result.len() > 1);
+    }
+}
