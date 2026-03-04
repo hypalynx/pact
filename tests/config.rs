@@ -49,10 +49,9 @@ fn test_config_load_no_file() {
 
 #[test]
 fn test_config_has_default_build_mode() {
-    let config = Config::load();
-    let build_mode = config.ui.modes.get("build");
-    assert!(build_mode.is_some());
-    let build = build_mode.unwrap();
+    // Test the default modes (not affected by user config)
+    let modes = Config::default_modes();
+    let build = modes.get("build").expect("build mode should exist");
     assert!(build.system_prompt.is_some());
     assert!(build.color.is_some());
 }

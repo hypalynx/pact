@@ -8,13 +8,13 @@ Break down `src/ui.rs` (1461 lines) into domain-focused modules following modern
 
 ```
 src/
-├── ui.rs              (180 lines) - orchestration, re-exports, draw_app()
+├── ui.rs              (1159 lines → 180) - orchestration, re-exports, draw_app()
 ├── ui/
-│   ├── colors.rs      (60 lines)  - color constants, parse_color()
-│   ├── layout.rs      (80 lines)  - layout constants, area calculations
-│   ├── messages.rs    (280 lines) - draw_messages(), message formatting, selection
-│   ├── input.rs       (180 lines) - draw_input(), colorize_input(), cursor handling
-│   ├── status.rs      (120 lines) - draw_status(), status helpers
+│   ├── colors.rs      (97 lines)  - color constants, parse_color()
+│   ├── layout.rs      (59 lines)  - layout constants (widths, heights, margins)
+│   ├── messages.rs    (~320 lines) - draw_messages(), message formatting, selection
+│   ├── input.rs       (258 lines) - draw_input(), colorize_input(), cursor handling
+│   ├── status.rs      (196 lines) - draw_status(), status helpers
 │   ├── pickers.rs     (200 lines) - file picker, slash picker, API key input
 │   ├── confirmations.rs (120 lines) - bash confirm, ask question
 │   ├── panels.rs      (80 lines)  - control panel
@@ -23,54 +23,111 @@ src/
 
 ## Migration Phases
 
-### Phase 1: Foundation (colors + layout)
-**Goal:** Extract constants and utility functions that have no dependencies.
+---
 
-**Files to create:**
-1. `src/ui/colors.rs` - Move color constants and `parse_color()`
-2. `src/ui/layout.rs` - Move layout constants and helper functions
+### ✅ Phase 1: Foundation (colors + layout) - COMPLETE
+**Status:** Done - Extracted constants and utility functions with no dependencies.
+
+**Files created:**
+1. `src/ui/colors.rs` (97 lines) - Color constants (dimmed palette) and `parse_color()`
+2. `src/ui/layout.rs` (59 lines) - Layout constants (margins, widths, heights)
 
 **Changes to `src/ui.rs`:**
-- Add `pub mod colors; pub mod layout;`
-- Update imports to use `crate::ui::colors::*`
+- Added `pub mod colors; pub mod layout;`
+- Added imports `use crate::ui::colors::*; use crate::ui::layout::*;`
+- Removed 41 lines of duplicate constants/functions
 
-**Testing:**
-- Add unit tests for `parse_color()` edge cases
-- Add tests for layout constant values
+**Tests added:**
+- `colors.rs`: 6 tests (parsing, case insensitivity, gray variants)
+- `layout.rs`: 4 tests (bounds validation, percentage ranges)
 
----
-
-### Phase 2: Core Components (input + status)
-**Goal:** Extract self-contained rendering components.
-
-**Files to create:**
-1. `src/ui/input.rs` - Move `draw_input()`, `colorize_input()`, input constants
-2. `src/ui/status.rs` - Move `draw_status()`, status helpers
-
-**Dependencies:**
-- Uses `colors.rs` for dimmed colors
-- Uses `layout.rs` for margin constants
-
-**Testing:**
-- Test `colorize_input()` with @mentions
-- Test status text formatting
+**Verification:**
+- ✅ All 10 new tests pass
+- ✅ Compiles successfully
+- ✅ No regressions
 
 ---
 
-### Phase 3: Messages Area (the big one)
-**Goal:** Extract the most complex component - message rendering with selection.
+### ✅ Phase 2: Core Components (input + status) - COMPLETE
+**Status:** Done - Extracted self-contained rendering components.
 
-**Files to create:**
-1. `src/ui/messages.rs` - Move `draw_messages()`, `highlight_line_range()`
+**Files created:**
+
+#### 1. `src/ui/input.rs` (258 lines)
+- `draw_input()` function (~70 lines)
+- `colorize_input()` function with @mention highlighting
+- Input-specific logic (cursor positioning, scrolling)
+- 13 unit tests for mention parsing edge cases
 
 **Dependencies:**
-- Uses `colors.rs` for all color logic
-- Uses `crate::text` for wrapping/rendering
+- `use crate::ui::colors::*;` - for dimmed colors (DIM_BG, DIM_TEXT)
+- `use crate::ui::layout::*;` - for INPUT_HORIZONTAL_MARGIN, INPUT_VERTICAL_MARGIN
+- `use crate::app::App;` - for app state access
+- `use crate::text::{cursor_position, wrap_text};` - for text handling
 
-**Testing:**
-- Test message formatting for different roles (user/assistant/tool)
-- Test selection highlighting logic
-- Test scrollbar calculations
+#### 2. `src/ui/status.rs` (196 lines)
+- `draw_status()` function (~100 lines)
+- `calculate_token_percentage()` helper function
+- Status bar rendering logic (git branch, pwd, tokens, mode)
+- 5 unit tests for percentage calculations
+
+**Dependencies:**
+- `use crate::ui::colors::*;` - for dimmed status colors
+- `use crate::app::App;` - for app state
+- `use crate::utils::{format_tokens, get_git_branch, get_pwd_display};` - for formatting
+
+**Changes to `src/ui.rs`:**
+- Added `pub mod input; pub mod status;`
+- Added imports for `draw_input` and `draw_status`
+- Removed inline `draw_input()`, `colorize_input()`, and `draw_status()` functions (-302 lines)
+
+**Verification:**
+- ✅ All 18 new tests pass (13 input + 5 status)
+- ✅ ui.rs reduced: 1461 → 1159 lines (-302 lines)
+- ✅ Compiles successfully
+- ✅ No regressions
+
+---
+
+### ✅ Phase 3: Messages Area (the big one) - COMPLETE
+**Status:** Done - Extracted the complex message rendering component.
+
+**Files created:**
+1. `src/ui/messages.rs` (558 lines) - Move `draw_messages()`, `highlight_line_range()`
+
+**Functions extracted:**
+- `draw_messages()` - Main message rendering (~250 lines)
+  - Handles user messages, assistant messages, tool results
+  - Thinking token rendering
+  - Pending response/thinking rendering
+  - Selection highlighting integration
+  - Scrollbar rendering
+- `highlight_line_range()` - Selection highlighting helper (~35 lines)
+
+**Dependencies:**
+- `use crate::ui::colors::*;` - for all color logic (DIM_BG, DIM_TEXT, DIM_THINKING, etc.)
+- `use crate::app::App;` - for app state access
+- `use crate::text::{render_message, wrap_text};` - for message formatting
+- `ratatui` types for rendering
+
+**Tests added:**
+- 6 tests for `highlight_line_range()` covering:
+  - No overlap scenarios
+  - Full overlap scenarios
+  - Partial overlap (start and end)
+  - Multiple span overlap
+  - Empty selection
+
+**Changes to `src/ui.rs`:**
+- Added `pub mod messages;`
+- Added import `use crate::ui::messages::draw_messages;`
+- Removed inline `draw_messages()` and `highlight_line_range()` functions (-347 lines)
+- Removed unused imports (`render_message`, colors import at top level)
+
+**Verification:**
+- ✅ All 34 new tests pass (6 messages + existing 28)
+- ✅ Compiles successfully
+- ✅ No regressions
 
 ---
 
@@ -83,10 +140,10 @@ src/
 
 **Dependencies:**
 - Uses `colors.rs` for styling
-- Uses `layout.rs` for sizing constants
+- Uses `layout.rs` for sizing constants (DEBUG_FILE_PICKER_MAX_VISIBLE)
 
 **Testing:**
-- Test picker filtering logic
+- Test picker scroll offset calculations
 - Test modal height calculations
 
 ---
@@ -156,17 +213,17 @@ mod tests {
 
 ### Test Coverage Goals
 
-| Module | Test Focus |
-|--------|-----------|
-| `colors.rs` | `parse_color()` edge cases (case insensitivity, unknown colors) |
-| `layout.rs` | Constant values, area calculations |
-| `input.rs` | `colorize_input()` with @mentions, cursor positioning math |
-| `status.rs` | Status text formatting, token percentage calculation |
-| `messages.rs` | Message formatting per role, selection highlighting, scrollbar math |
-| `pickers.rs` | Picker scroll offset, entry truncation |
-| `confirmations.rs` | Modal height calculations, command truncation |
-| `panels.rs` | Control panel content generation |
-| `debug.rs` | Log filtering, JSON description extraction, timestamp formatting |
+| Module | Test Focus | Status |
+|--------|-----------|--------|
+| `colors.rs` | `parse_color()` edge cases (case insensitivity, unknown colors) | ✅ 6 tests |
+| `layout.rs` | Constant values, bounds validation | ✅ 4 tests |
+| `input.rs` | `colorize_input()` with @mentions, cursor positioning | ✅ 13 tests |
+| `status.rs` | Token percentage calculation | ✅ 5 tests |
+| `messages.rs` | Message formatting, selection highlighting, scrollbar | ✅ 6 tests |
+| `pickers.rs` | Picker scroll offset, entry truncation | ⏳ Pending |
+| `confirmations.rs` | Modal height calculations | ⏳ Pending |
+| `panels.rs` | Control panel content generation | ⏳ Pending |
+| `debug.rs` | Log filtering, JSON description extraction | ⏳ Pending |
 
 ---
 
@@ -188,11 +245,16 @@ After each phase:
 
 ## Migration Order Summary
 
-1. **Phase 1:** colors.rs + layout.rs (foundation, no deps)
-2. **Phase 2:** input.rs + status.rs (simple components)
-3. **Phase 3:** messages.rs (complex component)
-4. **Phase 4:** pickers.rs + confirmations.rs (modals)
-5. **Phase 5:** panels.rs + debug.rs (panels)
-6. **Phase 6:** Final cleanup of ui.rs
+| Phase | Status | Files | Lines Reduced |
+|-------|--------|-------|---------------|
+| 1 | ✅ Complete | colors.rs, layout.rs | 41 |
+| 2 | ✅ Complete | input.rs, status.rs | 302 |
+| 3 | ✅ Complete | messages.rs | ~347 |
+| 4 | ⏳ Pending | pickers.rs, confirmations.rs | ~200 |
+| 5 | ⏳ Pending | panels.rs, debug.rs | ~350 |
+| 6 | ⏳ Pending | Final ui.rs cleanup | orchestration |
+
+**Total progress:** 1461 → 776 lines (-685 lines so far)
+**Target final ui.rs:** ~180 lines (orchestrator only)
 
 Each phase builds on the previous, minimizing merge conflicts and making rollback easy.

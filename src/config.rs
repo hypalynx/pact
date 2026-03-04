@@ -76,7 +76,7 @@ impl Config {
         config
     }
 
-    fn default_modes() -> IndexMap<String, Mode> {
+    pub fn default_modes() -> IndexMap<String, Mode> {
         let mut modes = IndexMap::new();
         modes.insert(
             "plan".to_string(),

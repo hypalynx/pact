@@ -27,6 +27,13 @@
 - [ ] need to include session ids in the debug menu
 - [ ] context is still not counting correctly LOL I get like 700k
   in a kimi session which seems very wrong.
+- [ ] Reading file message should say what lines are being read
+  i.e offset used
+- [ ] entering an email i.e mister@example.com tokenizes
+  @example.com like a file address.
+- [ ] we probably don't need AskUserQuestion/AskQuestion - LLMs
+  ask you questions and you type back normally all the time lol
+- [ ] handle intermittent connections, retry mechanism?
 
 ### Recently Fixed
 - [x] AskUserQuestion UI - was showing as hidden modal with dimmed screen (Mar 4, 2026)
