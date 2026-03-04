@@ -219,13 +219,24 @@ fn draw_messages(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
                     .unwrap_or(false);
 
                 if should_display_content {
-                    // Don't use wrap_text for diffs - preserve formatting
+                    // Use render_message for syntax highlighting (e.g., diffs, code blocks)
                     if let Some(content) = &msg.tool_result_content {
-                        for line_text in content.lines() {
-                            let style = Style::default().fg(tool_fg).bg(dim_bg_color);
-                            let padded = format!("  {}  ", line_text);
-                            lines.push(Line::from(vec![Span::styled(padded, style)]));
-                            text_lines.push(line_text.to_string());
+                        for (line_text, spans) in render_message(content, available_width) {
+                            let mut padded_spans = vec![Span::raw("  ")];
+                            // Apply tool result styling: tint all spans with tool_fg color
+                            for span in spans {
+                                let mut style = Style::default().fg(tool_fg).bg(dim_bg_color);
+                                // Preserve text styling but override foreground color
+                                if let Some(color) = span.style.fg {
+                                    // Use a blend of the span's color and tool_fg
+                                    // For now, prefer the original highlight color (e.g., green for +, red for -)
+                                    style = Style::default().fg(color).bg(dim_bg_color);
+                                }
+                                padded_spans.push(Span::styled(span.content.to_string(), style));
+                            }
+                            padded_spans.push(Span::raw("  "));
+                            lines.push(Line::from(padded_spans));
+                            text_lines.push(line_text);
                         }
                     }
                 }

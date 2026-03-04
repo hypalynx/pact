@@ -164,6 +164,11 @@ fn get_theme_set() -> &'static ThemeSet {
 }
 
 pub fn highlight_code_block(code: &str, language: &str) -> Vec<Vec<Span<'static>>> {
+    // Special handling for diff blocks
+    if language == "diff" || language == "patch" {
+        return highlight_diff(code);
+    }
+
     let syntax_set = get_syntax_set();
     let theme_set = get_theme_set();
     let theme = theme_set
@@ -197,6 +202,32 @@ pub fn highlight_code_block(code: &str, language: &str) -> Vec<Vec<Span<'static>
         if spans.is_empty() {
             spans.push(Span::raw(""));
         }
+        highlighted_lines.push(spans);
+    }
+
+    highlighted_lines
+}
+
+fn highlight_diff(code: &str) -> Vec<Vec<Span<'static>>> {
+    let mut highlighted_lines = Vec::new();
+
+    for line in code.lines() {
+        let spans = if line.starts_with("+++") || line.starts_with("---") {
+            // File headers in cyan
+            vec![Span::styled(line.to_string(), Style::default().fg(Color::Cyan))]
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            // Added lines in green
+            vec![Span::styled(line.to_string(), Style::default().fg(Color::Green))]
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            // Removed lines in red
+            vec![Span::styled(line.to_string(), Style::default().fg(Color::Red))]
+        } else if line.starts_with('@') {
+            // Hunk headers in magenta
+            vec![Span::styled(line.to_string(), Style::default().fg(Color::Magenta))]
+        } else {
+            // Context lines - default color
+            vec![Span::raw(line.to_string())]
+        };
         highlighted_lines.push(spans);
     }
 
