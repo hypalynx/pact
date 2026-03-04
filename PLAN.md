@@ -34,6 +34,7 @@
 - [ ] we probably don't need AskUserQuestion/AskQuestion - LLMs
   ask you questions and you type back normally all the time lol
 - [ ] handle intermittent connections, retry mechanism?
+- [ ] scrolling in the debug view (when viewing a specific record)
 
 ### Recently Fixed
 - [x] AskUserQuestion UI - was showing as hidden modal with dimmed screen (Mar 4, 2026)
