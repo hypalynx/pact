@@ -117,8 +117,7 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
         app.panel_state,
         crate::app::PanelState::ControlPanel | crate::app::PanelState::Debug
     ) || app.api_key_input.is_some()
-        || app.pending_bash_confirm.is_some()
-        || app.pending_ask_question.is_some();
+        || app.pending_bash_confirm.is_some();
 
     draw_messages(app, frame, is_modal_open);
     draw_input(app, frame, is_modal_open);
@@ -158,6 +157,11 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     // Draw bash confirmation prompt if active
     if app.pending_bash_confirm.is_some() {
         draw_bash_confirm(app, frame);
+    }
+
+    // Draw ask question prompt if active
+    if app.pending_ask_question.is_some() {
+        draw_ask_question(app, frame);
     }
 }
 
@@ -1076,81 +1080,77 @@ fn draw_bash_confirm(app: &App, frame: &mut Frame) {
             frame.render_widget(Paragraph::new(lines), inner);
         }
     }
+}
 
-    // Draw AskQuestion modal if present
+fn draw_ask_question(app: &App, frame: &mut Frame) {
     if let Some(modal) = &app.pending_ask_question {
-        let frame_area = frame.area();
-        let modal_width = (frame_area.width * 7 / 10).max(40);
-        let modal_height = (10 + modal.options.len() as u16).min(frame_area.height - 4);
-
-        let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
-        let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
-
-        let modal_area = Rect {
-            x: modal_x,
-            y: modal_y,
-            width: modal_width,
-            height: modal_height,
+        let height = (5 + modal.options.len() as u16).min(15);
+        let area = Rect {
+            x: app.input_rect.x,
+            y: app.input_rect.y.saturating_sub(height),
+            width: app.input_rect.width,
+            height,
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(symbols::border::ROUNDED)
-            .title("Question")
-            .style(Style::default().bg(Color::Black).fg(Color::White));
+        if app.input_rect.y >= height {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_set(symbols::border::EMPTY)
+                .title("Question")
+                .style(Style::default().bg(Color::Black));
 
-        let inner = modal_area.inner(ratatui::layout::Margin {
-            vertical: 1,
-            horizontal: 1,
-        });
+            let inner = area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 1,
+            });
 
-        frame.render_widget(Clear, modal_area);
-        frame.render_widget(block, modal_area);
+            frame.render_widget(Clear, area);
+            frame.render_widget(block, area);
 
-        let mut lines = Vec::new();
+            let mut lines = Vec::new();
 
-        // Question text
-        lines.push(Line::from(Span::styled(
-            modal.question.clone(),
-            Style::default().fg(Color::Cyan),
-        )));
-        lines.push(Line::from("")); // Blank line
-
-        // Options
-        for (idx, option) in modal.options.iter().enumerate() {
+            // Question text
             lines.push(Line::from(Span::styled(
-                format!("  {}. {}", idx + 1, option),
-                Style::default().fg(Color::Yellow),
+                modal.question.clone(),
+                Style::default().fg(Color::Cyan),
             )));
+
+            // Options
+            if !modal.options.is_empty() {
+                lines.push(Line::from("")); // Blank line
+                for (idx, option) in modal.options.iter().enumerate() {
+                    lines.push(Line::from(Span::styled(
+                        format!("  {}. {}", idx + 1, option),
+                        Style::default().fg(Color::Yellow),
+                    )));
+                }
+            }
+
+            // Input field with cursor
+            lines.push(Line::from("")); // Blank line before input
+            let input_prompt = format!("> {}", modal.input);
+            let cursor_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+            let mut input_spans = Vec::new();
+
+            for (idx, ch) in input_prompt.chars().enumerate() {
+                let is_cursor = idx == modal.cursor_pos + 2; // +2 for "> "
+                let style = if is_cursor {
+                    cursor_style
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                input_spans.push(Span::styled(ch.to_string(), style));
+            }
+
+            // If cursor is at the end, show it
+            if modal.cursor_pos == modal.input.len() {
+                input_spans.push(Span::styled(" ".to_string(), cursor_style));
+            }
+
+            lines.push(Line::from(input_spans));
+
+            frame.render_widget(Paragraph::new(lines), inner);
         }
-
-        if !modal.options.is_empty() {
-            lines.push(Line::from("")); // Blank line
-        }
-
-        // Input field
-        let input_prompt = format!("> {}", modal.input);
-        let cursor_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let mut input_spans = Vec::new();
-
-        for (idx, ch) in input_prompt.chars().enumerate() {
-            let is_cursor = idx == modal.cursor_pos + 2; // +2 for "> "
-            let style = if is_cursor {
-                cursor_style
-            } else {
-                Style::default().fg(Color::White)
-            };
-            input_spans.push(Span::styled(ch.to_string(), style));
-        }
-
-        // If cursor is at the end, show it
-        if modal.cursor_pos == modal.input.len() {
-            input_spans.push(Span::styled(" ".to_string(), cursor_style));
-        }
-
-        lines.push(Line::from(input_spans));
-
-        frame.render_widget(Paragraph::new(lines), inner);
     }
 }
 

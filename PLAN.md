@@ -1,16 +1,5 @@
 # Pact Development Plan
 
-## Remaining Work (Nice-to-Have Polish)
-
-### Phase 6: Task Management & Planning Tools
-- [ ] **TodoWrite** — Create/update structured task lists for current session
-- [ ] **TodoRead** — Read existing tasks from task list
-- [ ] **TaskWrite** — Create new tasks with status tracking
-- [ ] **TaskRead** — Read specific task details
-- [ ] **TaskUpdate** — Update task status (pending → in_progress → completed)
-- [ ] **AskQuestion** — Query user for clarification/decisions during execution
-- [ ] **ExitPlanMode** — Request user approval for implementation plans
-
 ### Not Started
 - [ ] Research: Control tokens for disabling thinking in supported models
   - Resources: https://github.com/QwenLM/Qwen3.5, Fireworks reasoning-parser docs
@@ -21,10 +10,17 @@
     "screenshot" the TUI perhaps?
 - paste just 'types' into the input box but we should be able to
   handle this better (you see each character input
-  sequentially)
-- [ ] up/down should only go up/down message history if you are at the top/bottom of the current message input content, the latest message (unsent) should be preserved so you can return to it
-- [ ] ctrl + p to cycle through providers (like we can already in the control panel)
+  sequentially) - if we haven't already done so.. more than 3
+  lines in a paste should have a token instead i.e [Pasted +7
+  lines] I am pretty sure we have done this already but need to
+  confirm the behaviour
 - [ ] split up ui.rs now it's kinda large
 - [ ] no matches for file picker should just close the file picker, i.e if you press "@ " or "@gmail.com" then the user wants to type that in the message rather than still be using the @ file picker
 - [ ] **Add automated test action for CI/CD pipeline**
   - Run `make test` on every PR/commit to confirm formatting, linting, and all 118 tests pass
+
+### Recently Fixed
+- [x] AskUserQuestion UI - was showing as hidden modal with dimmed screen (Mar 4, 2026)
+  - Fixed: moved from centered modal to input area replacement
+  - Now draws above the input box like bash_confirm
+  - Removed from is_modal_open check so screen doesn't dim
