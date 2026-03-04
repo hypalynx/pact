@@ -214,16 +214,28 @@ fn highlight_diff(code: &str) -> Vec<Vec<Span<'static>>> {
     for line in code.lines() {
         let spans = if line.starts_with("+++") || line.starts_with("---") {
             // File headers in cyan
-            vec![Span::styled(line.to_string(), Style::default().fg(Color::Cyan))]
+            vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(Color::Cyan),
+            )]
         } else if line.starts_with('+') && !line.starts_with("+++") {
             // Added lines in green
-            vec![Span::styled(line.to_string(), Style::default().fg(Color::Green))]
+            vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(Color::Green),
+            )]
         } else if line.starts_with('-') && !line.starts_with("---") {
             // Removed lines in red
-            vec![Span::styled(line.to_string(), Style::default().fg(Color::Red))]
+            vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(Color::Red),
+            )]
         } else if line.starts_with('@') {
             // Hunk headers in magenta
-            vec![Span::styled(line.to_string(), Style::default().fg(Color::Magenta))]
+            vec![Span::styled(
+                line.to_string(),
+                Style::default().fg(Color::Magenta),
+            )]
         } else {
             // Context lines - default color
             vec![Span::raw(line.to_string())]

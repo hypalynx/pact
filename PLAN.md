@@ -16,6 +16,9 @@
   - Resources: https://github.com/QwenLM/Qwen3.5, Fireworks reasoning-parser docs
 - [ ] config setting to turn off thinking via prompt
 - [ ] improve code coverage.. consider popular/well known ways to increase reliability of a cli tool
+  - good use case IF we can would be to include tests around
+    up/down history to track cursor movement.. and somehow
+    "screenshot" the TUI perhaps?
 - paste just 'types' into the input box but we should be able to
   handle this better (you see each character input
   sequentially)

@@ -6,7 +6,7 @@ use tempfile::NamedTempFile;
 #[test]
 fn test_get_tool_definitions() {
     let defs = get_tool_definitions();
-    assert_eq!(defs.len(), 7); // Read, Glob, Grep, Bash, Write, Edit, Webfetch
+    assert_eq!(defs.len(), 12); // Read, Glob, Grep, Bash, Write, Edit, Webfetch, TaskCreate, TaskList, TaskGet, TaskUpdate, AskQuestion
 
     // Check first tool is Read
     let tool = &defs[0];

@@ -616,5 +616,152 @@ This design allows:
 
 ---
 
-**Last Updated**: Feb 28, 2026
-**Status**: Pact has 3 core tools; expanding based on Phase 2 plan
+## Task Management & Planning Tools
+
+**Added**: Mar 4, 2026 – Five new tools for task tracking and interactive prompting
+
+### Overview
+
+Task tools enable agents to plan and track work across multi-step sessions. They're session-scoped (in-memory) and designed to be lightweight in context consumption.
+
+### Why Task Tools?
+
+Research from Claude Code (migrated Jan 2026) shows agents benefit significantly from:
+- **Upfront planning** → better chain-of-thought reasoning
+- **Progress tracking** → attention maintenance across long sessions
+- **User interaction** → confirmation on design decisions before implementation
+
+### Tools
+
+#### TaskCreate
+Creates a new task with a subject and optional description.
+
+**Input**:
+```json
+{
+  "subject": "Fix authentication bug",
+  "description": "User sessions expire after 5 minutes. Trace token validation logic."
+}
+```
+
+**Output**:
+```json
+{"id": 1, "message": "Task 1 created: Fix authentication bug"}
+```
+
+#### TaskList
+Lists all tasks with status symbols.
+
+**Input**: (no parameters)
+
+**Output**:
+```
+○ [1] Fix authentication bug
+⟳ [2] Write integration tests
+✓ [3] Update documentation
+```
+
+Legend: `○` = pending, `⟳` = in_progress, `✓` = completed
+
+#### TaskGet
+Retrieve full details of a specific task by ID.
+
+**Input**:
+```json
+{"id": 1}
+```
+
+**Output**:
+```json
+{
+  "id": 1,
+  "subject": "Fix authentication bug",
+  "description": "User sessions expire after 5 minutes...",
+  "status": "pending"
+}
+```
+
+#### TaskUpdate
+Update task status.
+
+**Input**:
+```json
+{
+  "id": 1,
+  "status": "in_progress"
+}
+```
+
+**Output**:
+```json
+{"message": "Task 1 updated to in_progress"}
+```
+
+Valid statuses: `pending`, `in_progress`, `completed`
+
+#### AskQuestion
+Block execution and ask the user a question. Returns user's answer as the result.
+
+**Input**:
+```json
+{
+  "question": "Which test framework should I use?",
+  "options": ["pytest", "unittest", "unittest2"]
+}
+```
+
+**Output**: (user types answer, e.g., "pytest")
+
+### UI Display
+
+Task tool output appears in chat with **amber/yellow text on dark gray background**:
+```
+TaskCreate:   + [1] Fix auth bug
+TaskList:     ○ [1] Fix auth bug   ⟳ [2] Write tests
+TaskUpdate:   ✓ [1] Fix auth bug → completed
+```
+
+AskQuestion renders as a **centered modal** with:
+- Question text at top
+- Numbered options (if provided)
+- Input field for free-text answer
+- Dimmed background behind modal
+
+### Implementation Details
+
+**Session-Scoped Storage**:
+- Tasks stored in `App.tasks: Vec<Task>`
+- IDs auto-increment via `App.task_id_counter`
+- Lost when app exits (intentional — tasks are session planning artifacts)
+
+**Execution Model**:
+- Task tools handled **synchronously** in `event::handle_llm_event()` (no background threads)
+- Emit `LlmEvent::ToolResult` directly after processing
+- AskQuestion blocks further processing until user submits answer
+
+**Context Efficiency**:
+- Tool descriptions: 1-2 sentences max
+- TaskList returns summary lines only (caller uses TaskGet for details)
+- Minimal JSON payloads to preserve context window
+
+### Design Decisions
+
+1. **Session-scoped over persistent**: Tasks are planning artifacts for the current work session. Persistence would add complexity (database migrations, schema versioning).
+
+2. **Granular over batch**: Five separate tools (TaskCreate, TaskList, TaskGet, TaskUpdate) instead of one TodoWrite. Follows Claude Code precedent — enables agents to query tasks mid-execution without sending full list.
+
+3. **Local execution over threaded**: Task tools bypass the background thread pool. Avoids state sync complexity and ensures immediate feedback.
+
+4. **No dependencies**: Tasks don't reference files or other entities. Keeps them simple and portable across projects.
+
+### Future Enhancements
+
+- Task dependencies: `blockedBy`, `blocks` fields to model prerequisite relationships
+- Persistence: Optional SQLite storage (enabled via config)
+- Tagging: Labels for grouping related tasks
+- Duration tracking: Estimated vs actual time spent
+
+---
+
+**Last Updated**: Mar 4, 2026
+**Status**: Task tools implemented and tested; AskQuestion modal in UI

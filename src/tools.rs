@@ -165,6 +165,107 @@ pub fn get_tool_definitions() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "TaskCreate",
+                "description": "Create a new task with subject and optional description.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subject": {
+                            "type": "string",
+                            "description": "Task title (brief, imperative form)"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Detailed description of task requirements"
+                        }
+                    },
+                    "required": ["subject"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "TaskList",
+                "description": "List all tasks with their status.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "TaskGet",
+                "description": "Get full details of a specific task by ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "integer",
+                            "description": "Task ID"
+                        }
+                    },
+                    "required": ["id"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "TaskUpdate",
+                "description": "Update task status or other fields.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "integer",
+                            "description": "Task ID"
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "New status: pending, in_progress, or completed",
+                            "enum": ["pending", "in_progress", "completed"]
+                        }
+                    },
+                    "required": ["id"],
+                    "additionalProperties": false
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "AskQuestion",
+                "description": "Ask the user a question and get their response.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "Question to ask the user"
+                        },
+                        "options": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Optional list of predefined answer options"
+                        }
+                    },
+                    "required": ["question"],
+                    "additionalProperties": false
+                }
+            }
+        }),
     ]
 }
 

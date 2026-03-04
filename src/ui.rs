@@ -117,7 +117,8 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
         app.panel_state,
         crate::app::PanelState::ControlPanel | crate::app::PanelState::Debug
     ) || app.api_key_input.is_some()
-        || app.pending_bash_confirm.is_some();
+        || app.pending_bash_confirm.is_some()
+        || app.pending_ask_question.is_some();
 
     draw_messages(app, frame, is_modal_open);
     draw_input(app, frame, is_modal_open);
@@ -205,7 +206,7 @@ fn draw_messages(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
                 text_lines.push(msg.text.clone());
 
                 // Only show full content for tools that should display their output
-                // Write, Edit, Bash show full content
+                // Write, Edit, Bash, TaskCreate, TaskList, TaskGet, TaskUpdate show full content
                 // Read, Glob, Grep, Webfetch only show summary
                 let should_display_content = msg
                     .tool_name
@@ -213,7 +214,16 @@ fn draw_messages(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
                     .map(|name| {
                         matches!(
                             name.as_str(),
-                            "Write" | "Edit" | "Bash" | "write" | "edit" | "bash"
+                            "Write"
+                                | "Edit"
+                                | "Bash"
+                                | "write"
+                                | "edit"
+                                | "bash"
+                                | "TaskCreate"
+                                | "TaskList"
+                                | "TaskGet"
+                                | "TaskUpdate"
                         )
                     })
                     .unwrap_or(false);
@@ -221,11 +231,33 @@ fn draw_messages(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
                 if should_display_content {
                     // Use render_message for syntax highlighting (e.g., diffs, code blocks)
                     if let Some(content) = &msg.tool_result_content {
+                        // Determine color for task tools (amber/yellow instead of gray)
+                        let is_task_tool = msg
+                            .tool_name
+                            .as_ref()
+                            .map(|name| {
+                                matches!(
+                                    name.as_str(),
+                                    "TaskCreate" | "TaskList" | "TaskGet" | "TaskUpdate"
+                                )
+                            })
+                            .unwrap_or(false);
+
+                        let content_fg = if is_task_tool {
+                            if is_dimmed {
+                                Color::Rgb(180, 140, 0) // Muted amber
+                            } else {
+                                Color::Yellow
+                            }
+                        } else {
+                            tool_fg
+                        };
+
                         for (line_text, spans) in render_message(content, available_width) {
                             let mut padded_spans = vec![Span::raw("  ")];
                             // Apply tool result styling: tint all spans with tool_fg color
                             for span in spans {
-                                let mut style = Style::default().fg(tool_fg).bg(dim_bg_color);
+                                let mut style = Style::default().fg(content_fg).bg(dim_bg_color);
                                 // Preserve text styling but override foreground color
                                 if let Some(color) = span.style.fg {
                                     // Use a blend of the span's color and tool_fg
@@ -1043,6 +1075,82 @@ fn draw_bash_confirm(app: &App, frame: &mut Frame) {
 
             frame.render_widget(Paragraph::new(lines), inner);
         }
+    }
+
+    // Draw AskQuestion modal if present
+    if let Some(modal) = &app.pending_ask_question {
+        let frame_area = frame.area();
+        let modal_width = (frame_area.width * 7 / 10).max(40);
+        let modal_height = (10 + modal.options.len() as u16).min(frame_area.height - 4);
+
+        let modal_x = (frame_area.width.saturating_sub(modal_width)) / 2;
+        let modal_y = (frame_area.height.saturating_sub(modal_height)) / 2;
+
+        let modal_area = Rect {
+            x: modal_x,
+            y: modal_y,
+            width: modal_width,
+            height: modal_height,
+        };
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(symbols::border::ROUNDED)
+            .title("Question")
+            .style(Style::default().bg(Color::Black).fg(Color::White));
+
+        let inner = modal_area.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 1,
+        });
+
+        frame.render_widget(Clear, modal_area);
+        frame.render_widget(block, modal_area);
+
+        let mut lines = Vec::new();
+
+        // Question text
+        lines.push(Line::from(Span::styled(
+            modal.question.clone(),
+            Style::default().fg(Color::Cyan),
+        )));
+        lines.push(Line::from("")); // Blank line
+
+        // Options
+        for (idx, option) in modal.options.iter().enumerate() {
+            lines.push(Line::from(Span::styled(
+                format!("  {}. {}", idx + 1, option),
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+
+        if !modal.options.is_empty() {
+            lines.push(Line::from("")); // Blank line
+        }
+
+        // Input field
+        let input_prompt = format!("> {}", modal.input);
+        let cursor_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        let mut input_spans = Vec::new();
+
+        for (idx, ch) in input_prompt.chars().enumerate() {
+            let is_cursor = idx == modal.cursor_pos + 2; // +2 for "> "
+            let style = if is_cursor {
+                cursor_style
+            } else {
+                Style::default().fg(Color::White)
+            };
+            input_spans.push(Span::styled(ch.to_string(), style));
+        }
+
+        // If cursor is at the end, show it
+        if modal.cursor_pos == modal.input.len() {
+            input_spans.push(Span::styled(" ".to_string(), cursor_style));
+        }
+
+        lines.push(Line::from(input_spans));
+
+        frame.render_widget(Paragraph::new(lines), inner);
     }
 }
 

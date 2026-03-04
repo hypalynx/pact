@@ -199,6 +199,159 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 }
             }
 
+            // Intercept task tools (handle locally, no background thread)
+            match name.as_str() {
+                "TaskCreate" => {
+                    let subject = args
+                        .get("subject")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let description = args
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+
+                    let task_id = app.task_id_counter;
+                    app.task_id_counter += 1;
+
+                    let task = crate::app::Task {
+                        id: task_id,
+                        subject: subject.clone(),
+                        description,
+                        status: crate::app::TaskStatus::Pending,
+                        blocks: Vec::new(),
+                        blocked_by: Vec::new(),
+                    };
+                    app.tasks.push(task);
+
+                    let result = format!(
+                        "{{\"id\": {}, \"message\": \"Task {} created: {}\"}}",
+                        task_id, task_id, subject
+                    );
+                    let _ = app.tx.send(LlmEvent::ToolResult {
+                        tool_name: name,
+                        tool_call_id: id,
+                        summary: format!("Task {} created", task_id),
+                        content: result,
+                        call_id: 0,
+                    });
+                    return;
+                }
+                "TaskList" => {
+                    let mut lines = Vec::new();
+                    for task in &app.tasks {
+                        let status_sym = match task.status {
+                            crate::app::TaskStatus::Pending => "○",
+                            crate::app::TaskStatus::InProgress => "⟳",
+                            crate::app::TaskStatus::Completed => "✓",
+                        };
+                        lines.push(format!("{} [{}] {}", status_sym, task.id, task.subject));
+                    }
+                    let result = if lines.is_empty() {
+                        "No tasks".to_string()
+                    } else {
+                        lines.join("\n")
+                    };
+                    let _ = app.tx.send(LlmEvent::ToolResult {
+                        tool_name: name,
+                        tool_call_id: id,
+                        summary: format!("{} tasks", app.tasks.len()),
+                        content: result,
+                        call_id: 0,
+                    });
+                    return;
+                }
+                "TaskGet" => {
+                    let task_id = args.get("id").and_then(|v| v.as_i64()).map(|n| n as u32);
+
+                    let result = if let Some(id) = task_id {
+                        if let Some(task) = app.tasks.iter().find(|t| t.id == id) {
+                            let status_str = match task.status {
+                                crate::app::TaskStatus::Pending => "pending",
+                                crate::app::TaskStatus::InProgress => "in_progress",
+                                crate::app::TaskStatus::Completed => "completed",
+                            };
+                            format!(
+                                "{{\"id\": {}, \"subject\": \"{}\", \"description\": \"{}\", \"status\": \"{}\"}}",
+                                task.id,
+                                task.subject.replace('"', "\\\""),
+                                task.description.replace('"', "\\\""),
+                                status_str
+                            )
+                        } else {
+                            format!("{{\"error\": \"Task {} not found\"}}", id)
+                        }
+                    } else {
+                        "{\"error\": \"Invalid task ID\"}".to_string()
+                    };
+                    let _ = app.tx.send(LlmEvent::ToolResult {
+                        tool_name: name,
+                        tool_call_id: id,
+                        summary: "Task retrieved".to_string(),
+                        content: result,
+                        call_id: 0,
+                    });
+                    return;
+                }
+                "TaskUpdate" => {
+                    let task_id = args.get("id").and_then(|v| v.as_i64()).map(|n| n as u32);
+                    let status_str = args.get("status").and_then(|v| v.as_str());
+
+                    let result = if let (Some(id), Some(status)) = (task_id, status_str) {
+                        if let Some(task) = app.tasks.iter_mut().find(|t| t.id == id) {
+                            task.status = match status {
+                                "pending" => crate::app::TaskStatus::Pending,
+                                "in_progress" => crate::app::TaskStatus::InProgress,
+                                "completed" => crate::app::TaskStatus::Completed,
+                                _ => crate::app::TaskStatus::Pending,
+                            };
+                            format!("{{\"message\": \"Task {} updated to {}\"}}", id, status)
+                        } else {
+                            format!("{{\"error\": \"Task {} not found\"}}", id)
+                        }
+                    } else {
+                        "{\"error\": \"Invalid task ID or status\"}".to_string()
+                    };
+                    let _ = app.tx.send(LlmEvent::ToolResult {
+                        tool_name: name,
+                        tool_call_id: id,
+                        summary: "Task updated".to_string(),
+                        content: result,
+                        call_id: 0,
+                    });
+                    return;
+                }
+                "AskQuestion" => {
+                    let question = args
+                        .get("question")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let options: Vec<String> = args
+                        .get("options")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    app.pending_ask_question = Some(crate::app::AskQuestionModal {
+                        tool_call_id: id,
+                        question,
+                        options,
+                        input: String::new(),
+                        cursor_pos: 0,
+                    });
+                    app.pending_tool_count += 1;
+                    return;
+                }
+                _ => {}
+            }
+
             // Execute the tool in a background thread (don't block UI on I/O)
             let tool_call = tools::ToolCall {
                 name: name.clone(),
@@ -363,6 +516,22 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
         return true;
     }
 
+    // Ctrl+X prefix key (Emacs-style chord prefix)
+    if key.code == KeyCode::Char('x') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.pending_ctrl_x = true;
+        return true;
+    }
+
+    // Resolve pending Ctrl+X chords
+    if app.pending_ctrl_x {
+        app.pending_ctrl_x = false;
+        if key.code == KeyCode::Char('p') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            app.cycle_provider();
+            return true;
+        }
+        // Unknown chord: fall through so second key is processed normally
+    }
+
     // Handle file picker keys if picker is open
     if app.file_picker.is_some() {
         return handle_file_picker_key(app, key);
@@ -381,6 +550,11 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     // Handle bash confirmation mode
     if app.pending_bash_confirm.is_some() {
         return handle_bash_confirm_key(app, key);
+    }
+
+    // Handle AskQuestion modal
+    if app.pending_ask_question.is_some() {
+        return handle_ask_question_key(app, key);
     }
 
     // Handle panel-specific keys
@@ -849,6 +1023,55 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
     true
 }
 
+fn handle_ask_question_key(app: &mut App, key: KeyEvent) -> bool {
+    if let Some(modal) = &mut app.pending_ask_question {
+        match key.code {
+            KeyCode::Char(c) => {
+                modal.input.insert(modal.cursor_pos, c);
+                modal.cursor_pos += 1;
+            }
+            KeyCode::Backspace => {
+                if modal.cursor_pos > 0 {
+                    modal.cursor_pos -= 1;
+                    modal.input.remove(modal.cursor_pos);
+                }
+            }
+            KeyCode::Delete => {
+                if modal.cursor_pos < modal.input.len() {
+                    modal.input.remove(modal.cursor_pos);
+                }
+            }
+            KeyCode::Left => {
+                if modal.cursor_pos > 0 {
+                    modal.cursor_pos -= 1;
+                }
+            }
+            KeyCode::Right => {
+                if modal.cursor_pos < modal.input.len() {
+                    modal.cursor_pos += 1;
+                }
+            }
+            KeyCode::Home => {
+                modal.cursor_pos = 0;
+            }
+            KeyCode::End => {
+                modal.cursor_pos = modal.input.len();
+            }
+            KeyCode::Enter => {
+                handle_ask_question_submit(app);
+                return true;
+            }
+            KeyCode::Esc => {
+                app.pending_ask_question = None;
+                app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
+                return true;
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
 /// Handle mouse events
 pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
     match mouse.kind {
@@ -885,5 +1108,20 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
             app.finish_selection();
         }
         _ => {}
+    }
+}
+
+/// Handle AskQuestion modal submission
+pub fn handle_ask_question_submit(app: &mut App) {
+    if let Some(modal) = app.pending_ask_question.take() {
+        let answer = modal.input.clone();
+        let _ = app.tx.send(LlmEvent::ToolResult {
+            tool_name: "AskQuestion".to_string(),
+            tool_call_id: modal.tool_call_id,
+            summary: "Question answered".to_string(),
+            content: answer,
+            call_id: 0,
+        });
+        app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
     }
 }

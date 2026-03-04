@@ -26,6 +26,31 @@ pub struct PendingBashConfirm {
     pub args: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone)]
+pub struct Task {
+    pub id: u32,
+    pub subject: String,
+    pub description: String,
+    pub status: TaskStatus,
+    pub blocks: Vec<u32>,
+    pub blocked_by: Vec<u32>,
+}
+
+pub struct AskQuestionModal {
+    pub tool_call_id: String,
+    pub question: String,
+    pub options: Vec<String>,
+    pub input: String,
+    pub cursor_pos: usize,
+}
+
 pub struct FilePicker {
     pub query: String,
     pub at_start: usize, // byte offset in `input` where @ was typed
@@ -99,8 +124,8 @@ pub struct App {
     pub history_index: Option<usize>,
     pub input: String,
     pub cursor_pos: usize,
-    pub unsent_draft: String,       // Preserves unsent input when navigating history
-    pub unsent_cursor_pos: usize,   // Preserves cursor pos for unsent input
+    pub unsent_draft: String, // Preserves unsent input when navigating history
+    pub unsent_cursor_pos: usize, // Preserves cursor pos for unsent input
     pub input_rect: Rect,
     pub messages_rect: Rect,
     pub rx: mpsc::Receiver<LlmEvent>,
@@ -174,6 +199,14 @@ pub struct App {
 
     // Retry handling for invalid tool calls
     pub needs_retry: bool,
+
+    // Task management
+    pub tasks: Vec<Task>,
+    pub task_id_counter: u32,
+    pub pending_ask_question: Option<AskQuestionModal>,
+
+    // Ctrl+X prefix key state
+    pub pending_ctrl_x: bool,
 }
 
 impl App {
@@ -267,6 +300,10 @@ impl App {
             session_id,
             working_directory,
             needs_retry: false,
+            tasks: Vec::new(),
+            task_id_counter: 1,
+            pending_ask_question: None,
+            pending_ctrl_x: false,
         }
     }
 
@@ -438,7 +475,10 @@ impl App {
     /// Get the available width for input text wrapping
     fn get_input_width(&self) -> usize {
         const INPUT_HORIZONTAL_MARGIN: u16 = 3;
-        (self.input_rect.width.saturating_sub(INPUT_HORIZONTAL_MARGIN * 2)) as usize
+        (self
+            .input_rect
+            .width
+            .saturating_sub(INPUT_HORIZONTAL_MARGIN * 2)) as usize
     }
 
     /// Get visual cursor position (col, row) and total wrapped lines
@@ -1035,6 +1075,18 @@ impl App {
             picker.query.push(c);
         }
         self.file_picker_update_filter();
+        // Auto-close if no matches: keep @+query as plain text in input
+        if self
+            .file_picker
+            .as_ref()
+            .is_some_and(|p| p.filtered.is_empty())
+            && let Some(picker) = self.file_picker.take()
+        {
+            for ch in picker.query.chars() {
+                self.input.insert(self.cursor_pos, ch);
+                self.cursor_pos += ch.len_utf8();
+            }
+        }
     }
 
     pub fn file_picker_backspace(&mut self) -> bool {
