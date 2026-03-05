@@ -557,6 +557,20 @@ pub fn call_llm(
         }
     }
 
+    // Handle any remaining incomplete partial tool call
+    // If we have a partial tool call but arguments don't parse as JSON,
+    // emit it as an InvalidToolCall so it can be handled
+    if let Some(partial) = partial_tool_call {
+        let malformed_json = format!(
+            r#"{{"id":"{}","function":{{"name":"{}","arguments":{}}}}}"#,
+            partial.id, partial.name, partial.arguments
+        );
+        let _ = tx.send(LlmEvent::InvalidToolCall {
+            raw: malformed_json,
+            call_id,
+        });
+    }
+
     // Reconstruct complete response from accumulated deltas
     let full_response = if !accumulated_thinking.is_empty()
         || !accumulated_text.is_empty()
