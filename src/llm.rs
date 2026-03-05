@@ -444,8 +444,37 @@ pub fn call_llm(
                 .and_then(|d| d.get("reasoning_content"))
                 .and_then(|t| t.as_str())
             {
-                accumulated_thinking.push_str(thinking);
-                let _ = tx.send(LlmEvent::Thinking(thinking.to_string(), call_id));
+                // Handle XML tool call accumulation in thinking (like Qwen3+)
+                if thinking.contains("<tool_call>") {
+                    partial_xml = Some(partial_xml.unwrap_or_default() + thinking);
+                } else if let Some(ref mut xml) = partial_xml {
+                    xml.push_str(thinking);
+                }
+
+                // Check if XML block is complete
+                if let Some(xml) = &partial_xml {
+                    if xml.contains("</tool_call>") {
+                        let xml_block = partial_xml.take().unwrap();
+
+                        // Try to parse as Qwen XML format
+                        if let Some((id, name, args)) = parse_qwen_xml_tool_call(&xml_block) {
+                            let _ = tx.send(LlmEvent::ToolCall {
+                                id,
+                                name,
+                                args,
+                                call_id,
+                            });
+                        } else {
+                            // If parsing failed, still emit as thinking content
+                            let _ = tx.send(LlmEvent::Thinking(xml_block.clone(), call_id));
+                            accumulated_thinking.push_str(&xml_block);
+                        }
+                    }
+                } else if !thinking.contains("<tool_call>") && !thinking.contains("</tool_call>") {
+                    // Regular thinking token (not part of XML block)
+                    accumulated_thinking.push_str(thinking);
+                    let _ = tx.send(LlmEvent::Thinking(thinking.to_string(), call_id));
+                }
             }
 
             // Check for tool calls in delta
@@ -582,4 +611,62 @@ pub fn call_llm(
     }
 
     let _ = tx.send(LlmEvent::Done(call_id));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_qwen_xml_tool_call_with_multiline() {
+        let xml = r#"<tool_call>
+<function=Bash>
+<parameter=command>find . -type f \( -name "*.rs" -o -name "*.js" \) 2>/dev/null | head -50</parameter>
+<parameter=description>Find Rust and JavaScript source files</parameter>
+</function>
+</tool_call>"#;
+
+        let result = parse_qwen_xml_tool_call(xml);
+        assert!(result.is_some(), "Should parse Qwen XML tool call");
+
+        let (id, name, args) = result.unwrap();
+        assert_eq!(name, "Bash");
+        assert_eq!(id, "qwen_xml_tool_call");
+        assert_eq!(
+            args.get("command").and_then(|v| v.as_str()).unwrap(),
+            r#"find . -type f \( -name "*.rs" -o -name "*.js" \) 2>/dev/null | head -50"#
+        );
+        assert_eq!(
+            args.get("description").and_then(|v| v.as_str()).unwrap(),
+            "Find Rust and JavaScript source files"
+        );
+    }
+
+    #[test]
+    fn test_parse_qwen_xml_tool_call_single_line() {
+        let xml = r#"<tool_call><function=Read><parameter=filePath>/etc/passwd</parameter></function></tool_call>"#;
+
+        let result = parse_qwen_xml_tool_call(xml);
+        assert!(result.is_some());
+
+        let (_id, name, args) = result.unwrap();
+        assert_eq!(name, "Read");
+        assert_eq!(args.get("filePath").and_then(|v| v.as_str()).unwrap(), "/etc/passwd");
+    }
+
+    #[test]
+    fn test_parse_qwen_xml_tool_call_json_value() {
+        let xml = r#"<tool_call><function=Write><parameter=filePath>/test.txt</parameter><parameter=options>{"indent":2}</parameter></function></tool_call>"#;
+
+        let result = parse_qwen_xml_tool_call(xml);
+        assert!(result.is_some());
+
+        let (_, name, args) = result.unwrap();
+        assert_eq!(name, "Write");
+
+        // Should parse JSON value as object, not string
+        let options = args.get("options").unwrap();
+        assert!(options.is_object());
+        assert_eq!(options.get("indent").and_then(|v| v.as_u64()).unwrap(), 2);
+    }
 }

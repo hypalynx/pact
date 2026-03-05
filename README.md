@@ -18,14 +18,29 @@ _Purposely restricting these to focus on
   - Kimi K2.5 (cloud)
   - GLM 4.7 Flash
   - Qwen 3.5 35b a3b
-  - Qwen 3.5 9b (when it comes out!)
-  - Qwen 3.5 2b (when it comes out!)
+  - Qwen 3.5 9b
+  - Qwen 3.5 2b - works but is not smart enough to even ask coding questions
   - Qwen 3 Coder 30b a3b
   - Qwen 3 4b Instruct 2507
   - GPT OSS 20b
   - Llama 3.2 1b
 
 - Optimised Targets
-  - Qwen 3.5 35b a3b (good enough but slow on linux laptop)
+  - Qwen 3.5 27b (slower but smart enough)
   - Gemini 3 Flash (best price/performance for Cloud)
   - Kimi K2.5 (decent price/performance for Cloud)
+  - Qwen 3.5 9b (MAY be good enough for coding questions, need to
+    test)
+
+If coding directly isn't fast enough (yet) then how about coding
+assistance? Will need to do my own local testing.
+
+### References on models
+
+- [brokk.ai power ranking](https://blog.brokk.ai/the-26-02-coding-power-ranking/)
+  - suggests 27b is worth it over 35b a3b in ability even at the
+    cost of speed
+  - also suggests local models are capable but not fast enough to
+    be usable.
+  - Gemini 3 Flash recommended as the best option. Kimi K2.5 also
+    does very well.
