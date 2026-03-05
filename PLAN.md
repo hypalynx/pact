@@ -18,6 +18,10 @@
   - Run `make test` on every PR/commit to confirm formatting, linting, and all 118 tests pass
 - [ ] when the LLM is busy, I can't see my cursor (though I can
   type) in the input box
+- [ ] user input messages during generation are not queued and
+  played after the LLM stops.. they just get input to the message
+  history and not executed.
+- [ ] how to implement subagents? is this done like a tool call?
 - [ ] thinking text also seems to come back as markdown so we
   might as well format it too!
 - [ ] /new or /clear should default back to the default mode

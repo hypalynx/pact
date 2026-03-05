@@ -83,11 +83,8 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
         .timeout(std::time::Duration::from_secs(2))
         .build()
         .unwrap_or_else(|_| reqwest::blocking::Client::new());
-    // Trim trailing /v1 from endpoint to avoid /v1/v1/models
-    // But keep /inference as it's part of Fireworks base URL
-    let base = endpoint.trim_end_matches("/v1");
 
-    if let Ok(response) = client.get(format!("{}/v1/models", base)).send()
+    if let Ok(response) = client.get(format!("{}/models", endpoint)).send()
         && let Ok(text) = response.text()
         && let Ok(json) = serde_json::from_str::<serde_json::Value>(&text)
     {
@@ -132,7 +129,7 @@ pub fn fetch_server_info(endpoint: &str) -> ServerInfo {
     }
 }
 
-/// Fetch all available models from the provider's /v1/models endpoint
+/// Fetch all available models from the provider's /models endpoint
 /// Returns a list of model IDs that can be used for the /model command
 pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<String> {
     let client = match reqwest::blocking::Client::builder()
@@ -142,10 +139,7 @@ pub fn fetch_available_models(endpoint: &str, api_key: Option<&str>) -> Vec<Stri
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
-    // Trim trailing /v1 from endpoint if present to avoid /v1/v1/models
-    // But keep /inference as it's part of Fireworks base URL
-    let base = endpoint.trim_end_matches("/v1");
-    let url = format!("{}/v1/models", base);
+    let url = format!("{}/models", endpoint);
 
     let mut request = client.get(&url);
 

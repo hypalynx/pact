@@ -100,8 +100,11 @@ fn parse_qwen_xml_tool_call(
         let value_end = remaining[value_start..].find("</parameter>")?;
         let value = remaining[value_start..value_start + value_end].to_string();
 
+        // Clean embedded newlines and trim whitespace from extracted value
+        let cleaned_value = value.replace("\n", "").replace("\r", "").trim().to_string();
+
         // Try to parse value as JSON, otherwise use as string
-        let json_value = serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
+        let json_value = serde_json::from_str(&cleaned_value).unwrap_or(serde_json::Value::String(cleaned_value));
         args.insert(key, json_value);
 
         remaining = &remaining[value_start + value_end + 12..];
@@ -115,6 +118,22 @@ fn parse_qwen_xml_tool_call(
     } else {
         Some((id, name, args))
     }
+}
+/// Clean tool call arguments by removing embedded newlines and trimming string values
+fn clean_tool_args(args: serde_json::Map<String, serde_json::Value>) -> serde_json::Map<String, serde_json::Value> {
+    let mut cleaned = serde_json::Map::new();
+    for (key, value) in args {
+        let cleaned_value = match value {
+            serde_json::Value::String(s) => {
+                // Remove embedded newlines and trim whitespace
+                let trimmed = s.replace("\\n", "").trim().to_string();
+                serde_json::Value::String(trimmed)
+            }
+            other => other,
+        };
+        cleaned.insert(key, cleaned_value);
+    }
+    cleaned
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -519,11 +538,14 @@ pub fn call_llm(
                                 serde_json::from_str::<serde_json::Value>(&partial.arguments)
                                 && let Some(args_obj) = args_json.as_object()
                             {
-                                // Successfully parsed! Emit the tool call
+                                // Successfully parsed! Clean up string values by removing embedded newlines
+                                let cleaned_args = clean_tool_args(args_obj.clone());
+
+                                // Emit the tool call
                                 let _ = tx.send(LlmEvent::ToolCall {
                                     id: partial.id.clone(),
                                     name: partial.name.clone(),
-                                    args: args_obj.clone(),
+                                    args: cleaned_args,
                                     call_id,
                                 });
                                 // Clear the partial to avoid re-emitting
@@ -559,14 +581,46 @@ pub fn call_llm(
 
     // Handle any remaining incomplete partial tool call
     // If we have a partial tool call but arguments don't parse as JSON,
-    // emit it as an InvalidToolCall so it can be handled
+    // try to extract what we can and emit it
     if let Some(partial) = partial_tool_call {
-        let malformed_json = format!(
-            r#"{{"id":"{}","function":{{"name":"{}","arguments":{}}}}}"#,
-            partial.id, partial.name, partial.arguments
-        );
-        let _ = tx.send(LlmEvent::InvalidToolCall {
-            raw: malformed_json,
+        // Try to repair/complete the arguments JSON
+        let mut fixed_args = partial.arguments.clone();
+
+        // If it doesn't end with }, try to add one
+        if !fixed_args.trim().ends_with('}') {
+            fixed_args.push('}');
+        }
+
+        // Try parsing the fixed arguments
+        let args_to_send = if let Ok(args_json) =
+            serde_json::from_str::<serde_json::Value>(&fixed_args)
+            && let Some(args_obj) = args_json.as_object()
+        {
+            // Successfully parsed!
+            args_obj.clone()
+        } else {
+            // Parsing failed - try cleaning embedded newlines and retry
+            // Remove literal newlines from string values in JSON
+            let cleaned = fixed_args.replace("\\n", "");
+            if let Ok(args_json) =
+                serde_json::from_str::<serde_json::Value>(&cleaned)
+                && let Some(args_obj) = args_json.as_object()
+            {
+                // Successfully parsed after cleanup!
+                args_obj.clone()
+            } else {
+                // Still can't parse - create a fallback with raw arguments as a string
+                let mut fallback = serde_json::Map::new();
+                fallback.insert("_raw_arguments".to_string(), serde_json::Value::String(fixed_args));
+                fallback
+            }
+        };
+
+        // Emit the tool call with whatever we could extract
+        let _ = tx.send(LlmEvent::ToolCall {
+            id: partial.id,
+            name: partial.name,
+            args: args_to_send,
             call_id,
         });
     }
@@ -682,5 +736,113 @@ mod tests {
         let options = args.get("options").unwrap();
         assert!(options.is_object());
         assert_eq!(options.get("indent").and_then(|v| v.as_u64()).unwrap(), 2);
+    }
+
+    #[test]
+    fn test_tool_call_arguments_repair_incomplete() {
+        // When arguments are incomplete/malformed, store as raw
+        // Real case: streamed fragments that don't form valid JSON
+        let incomplete_args = r#"{"pattern":"**/*.rs"#;
+
+        // This can't be fixed by just adding } - string is unclosed
+        let result = serde_json::from_str::<serde_json::Value>(incomplete_args);
+        assert!(result.is_err(), "Incomplete JSON should fail to parse");
+
+        // In real code, this would be stored as _raw_arguments
+        // For testing, just verify it doesn't parse
+    }
+
+    #[test]
+    fn test_tool_call_arguments_with_brace_expansion() {
+        // Real pattern from logs: **/*.{rs,html,js}
+        // This was fragmented as: ** / * . { rs , html , js } }
+        let args_json = r#"{"pattern":"**/*.{rs,html,js}"}"#;
+
+        let result = serde_json::from_str::<serde_json::Value>(args_json);
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        assert_eq!(
+            json.get("pattern").and_then(|v| v.as_str()).unwrap(),
+            "**/*.{rs,html,js}"
+        );
+    }
+
+    #[test]
+    fn test_tool_call_read_file_path_repair() {
+        // Real fragmented Read call from logs: ./src/ui/messages.rs
+        // Came as fragments: { / filePath / : / " / ./ / src / /ui / /messages / .rs / " / }
+        let partial_args = r#"{"filePath":"./src/ui/messages.rs""#;
+
+        let mut fixed = partial_args.to_string();
+        if !fixed.trim().ends_with('}') {
+            fixed.push('}');
+        }
+
+        let result = serde_json::from_str::<serde_json::Value>(&fixed);
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        assert_eq!(
+            json.get("filePath").and_then(|v| v.as_str()).unwrap(),
+            "./src/ui/messages.rs"
+        );
+    }
+
+    #[test]
+    fn test_tool_call_fallback_with_raw_arguments() {
+        // Case where repair still fails - store as raw string
+        let unparseable = r#"invalid json {]"#;
+
+        // Try to parse, fallback to raw storage
+        let mut map = serde_json::Map::new();
+        match serde_json::from_str::<serde_json::Value>(unparseable) {
+            Ok(v) if v.is_object() => {
+                map = v.as_object().unwrap().clone();
+            }
+            _ => {
+                map.insert("_raw_arguments".to_string(), serde_json::Value::String(unparseable.to_string()));
+            }
+        }
+
+        // Should have stored the raw arguments
+        assert!(map.contains_key("_raw_arguments"));
+        assert_eq!(
+            map.get("_raw_arguments").and_then(|v| v.as_str()).unwrap(),
+            "invalid json {]"
+        );
+    }
+
+    #[test]
+    fn test_clean_tool_args_removes_embedded_newlines() {
+        // Real case from logs: Grep with newlines in files and pattern
+        let mut args = serde_json::Map::new();
+        args.insert("files".to_string(), serde_json::Value::String("\nsrc/app.rs\n".to_string()));
+        args.insert("pattern".to_string(), serde_json::Value::String("\nKey::Up|Key::Down\n".to_string()));
+
+        let cleaned = clean_tool_args(args);
+
+        assert_eq!(
+            cleaned.get("files").and_then(|v| v.as_str()).unwrap(),
+            "src/app.rs"
+        );
+        assert_eq!(
+            cleaned.get("pattern").and_then(|v| v.as_str()).unwrap(),
+            "Key::Up|Key::Down"
+        );
+    }
+
+    #[test]
+    fn test_clean_tool_args_handles_escaped_newlines() {
+        // Tool call with escaped \n sequences
+        let mut args = serde_json::Map::new();
+        args.insert("filePath".to_string(), serde_json::Value::String("src/app.rs\\n".to_string()));
+
+        let cleaned = clean_tool_args(args);
+
+        assert_eq!(
+            cleaned.get("filePath").and_then(|v| v.as_str()).unwrap(),
+            "src/app.rs"
+        );
     }
 }

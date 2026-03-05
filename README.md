@@ -35,6 +35,23 @@ _Purposely restricting these to focus on
 If coding directly isn't fast enough (yet) then how about coding
 assistance? Will need to do my own local testing.
 
+## Local Model Testing
+
+_Experience I've had with open models on my 32GB DDR5 laptop with
+AMD Ryzen 9 270 w/ Radeon 780M Graphics._
+
+- gpt-oss-20b - fast output (24 tokens per second), very verbose
+  thinking and not very good at tool calling.
+- qwen3-4b instruct 2507 - sends everything as thinking despite
+  being an instruct model.. suspect this is a non-model issue I
+  haven't figured out.
+- qwen3.5 30b a3b - good but slow
+- qwen3.5 2b - 32 tokens per second, surprisingly coherent and
+  reliable at tool calling. It is not good at coding, reasoning
+  is also very basic.
+- glm 4.7 flash - 4-5 tokens per second, better than smaller
+  models but does not deliver.
+
 ### References on models
 
 - [brokk.ai power ranking](https://blog.brokk.ai/the-26-02-coding-power-ranking/)

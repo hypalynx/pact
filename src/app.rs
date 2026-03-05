@@ -1350,10 +1350,9 @@ impl App {
                                 let _ = db.update_provider_model(&provider.name, &full_model_id);
                             }
                         }
-                        // Remove the slash command from input
-                        let slash_start = picker.slash_start;
-                        self.input.drain(slash_start..self.cursor_pos);
-                        self.cursor_pos = slash_start;
+                        // Remove the slash command and everything typed after it from input
+                        self.input.drain(picker.slash_start..);
+                        self.cursor_pos = picker.slash_start;
                         self.set_status(
                             format!("Switched to model: {}", full_model_id),
                             StatusLevel::Info,
