@@ -400,6 +400,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     provider.as_deref(),
                     tokens_prompt,
                     tokens_completion,
+                    Some(&app.session_id),
                 ) {
                     app.set_status(format!("DB error: {}", e), crate::app::StatusLevel::Error);
                 }
@@ -1117,12 +1118,41 @@ fn handle_ask_question_key(app: &mut App, key: KeyEvent) -> bool {
 
 /// Handle mouse events
 pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
+    // Debug panel is modal - if open, all scrolls go to it
+    let debug_open = app.panel_state == PanelState::Debug;
+
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            app.scroll_up();
+            if debug_open {
+                if app.debug_expanded_row.is_some() {
+                    app.debug_expand_scroll = app.debug_expand_scroll.saturating_sub(3);
+                } else {
+                    app.debug_selected_row = app.debug_selected_row.saturating_sub(1);
+                    if app.debug_selected_row < app.debug_scroll {
+                        app.debug_scroll = app.debug_selected_row;
+                    }
+                }
+            } else {
+                app.scroll_up();
+            }
         }
         MouseEventKind::ScrollDown => {
-            app.scroll_down();
+            if debug_open {
+                if app.debug_expanded_row.is_some() {
+                    app.debug_expand_scroll += 3;
+                } else {
+                    let filtered_logs = app.debug_filtered_logs();
+                    if app.debug_selected_row < filtered_logs.len().saturating_sub(1) {
+                        app.debug_selected_row += 1;
+                        let visible_height = 10;
+                        if app.debug_selected_row >= app.debug_scroll + visible_height {
+                            app.debug_scroll = app.debug_selected_row - visible_height + 1;
+                        }
+                    }
+                }
+            } else {
+                app.scroll_down();
+            }
         }
         MouseEventKind::Down(_) => {
             let scrollbar_x = app.messages_rect.x + app.messages_rect.width.saturating_sub(1);

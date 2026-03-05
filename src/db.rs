@@ -34,6 +34,7 @@ pub struct ApiLogEntry {
     pub error_message: Option<String>,
     pub model_name: Option<String>,
     pub provider: Option<String>,
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -254,19 +255,20 @@ impl Db {
         provider: Option<&str>,
         tokens_prompt: Option<i64>,
         tokens_completion: Option<i64>,
+        session_id: Option<&str>,
     ) -> Result<()> {
         let now = chrono::Local::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO api_logs (created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message, model_name, provider)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![now, body, response, full_response, tokens_prompt, tokens_completion, duration_ms as i64, error, model_name, provider],
+            "INSERT INTO api_logs (created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message, model_name, provider, session_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![now, body, response, full_response, tokens_prompt, tokens_completion, duration_ms as i64, error, model_name, provider, session_id],
         )?;
         Ok(())
     }
 
     pub fn recent_api_logs(&self, limit: usize) -> Result<Vec<ApiLogEntry>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message, model_name, provider
+            "SELECT id, created_at, request_body, response_body, full_response, tokens_prompt, tokens_completion, duration_ms, error_message, model_name, provider, session_id
              FROM api_logs ORDER BY id DESC LIMIT ?1",
         )?;
 
@@ -283,6 +285,7 @@ impl Db {
                 error_message: row.get(8)?,
                 model_name: row.get(9)?,
                 provider: row.get(10)?,
+                session_id: row.get(11)?,
             })
         })?;
 

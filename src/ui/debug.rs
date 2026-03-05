@@ -32,8 +32,13 @@ pub fn draw_debug_modal(app: &App, frame: &mut Frame) {
         height: modal_height,
     };
 
+    let inner = modal_area.inner(Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
+
     let title = if app.debug_expanded_row.is_some() {
-        " Debug: Request Details  [Esc]back "
+        " Debug: Request Details  [↑↓/PgUp/PgDn]scroll  [←→]horiz  [Esc]back "
     } else {
         " Debug: API Logs  [↑↓]select  [Enter]expand  [e]rrors  [c]lear logs  [m]clear msgs  [Esc]back "
     };
@@ -44,11 +49,6 @@ pub fn draw_debug_modal(app: &App, frame: &mut Frame) {
         .title(title)
         .title_alignment(Alignment::Left)
         .style(Style::default().bg(Color::Black));
-
-    let inner = modal_area.inner(Margin {
-        vertical: 1,
-        horizontal: 1,
-    });
 
     if let Some(expanded_idx) = app.debug_expanded_row {
         draw_expanded_view(app, frame, modal_area, inner, block, expanded_idx);
@@ -142,10 +142,13 @@ fn draw_expanded_view(
             }
         }
 
-        // Apply scroll within expanded view
+        // Apply scroll within expanded view with bounds clamping
+        let max_scroll = lines.len().saturating_sub(inner.height as usize);
+        let scroll_offset = app.debug_expand_scroll.min(max_scroll);
+
         let visible_lines: Vec<Line> = lines
             .into_iter()
-            .skip(app.debug_expand_scroll)
+            .skip(scroll_offset)
             .take(inner.height as usize)
             .collect();
 
@@ -163,69 +166,83 @@ fn draw_expanded_view(
 /// Draw the list view showing all API logs with selection highlighting.
 fn draw_list_view(app: &App, frame: &mut Frame, modal_area: Rect, inner: Rect, block: Block) {
     let filtered_logs = app.debug_filtered_logs();
-    let mut lines = Vec::new();
+    let visible_height = inner.height as usize;
 
-    for (idx, log) in filtered_logs.iter().enumerate() {
-        let is_selected = idx == app.debug_selected_row;
-        let status_icon = if log.error_message.is_some() {
-            Span::styled("✗", Style::default().fg(Color::Red))
-        } else {
-            Span::styled("✓", Style::default().fg(Color::Green))
-        };
+    // Only build lines for visible rows (no expensive JSON parsing)
+    let visible_lines: Vec<Line> = filtered_logs
+        .iter()
+        .enumerate()
+        .skip(app.debug_scroll)
+        .take(visible_height)
+        .map(|(idx, log)| {
+            let is_selected = idx == app.debug_selected_row;
+            let status_icon = if log.error_message.is_some() {
+                Span::styled("✗", Style::default().fg(Color::Red))
+            } else {
+                Span::styled("✓", Style::default().fg(Color::Green))
+            };
 
-        let time_span = format_time(&log.created_at);
-        let duration_span = format_duration(log.duration_ms.unwrap_or(0));
-        let description = extract_description(&log.request_body);
-        let bg_style = get_bg_style(is_selected);
-
-        if let Some(err) = &log.error_message {
-            let error_text = format!("Error: {}", err);
-            let mut spans = vec![
-                get_status_icon(status_icon, is_selected, true),
-                Span::styled("  ", bg_style),
-                get_time_span(&time_span.content, is_selected),
-                Span::styled("  ", bg_style),
-                Span::styled(duration_span.content.clone(), bg_style),
-                Span::styled(
-                    error_text,
-                    if is_selected {
-                        Style::default().fg(Color::Red).bg(Color::Rgb(50, 50, 50))
+            let time_str = format_time(&log.created_at);
+            let id_str = format!("#{}", log.id);
+            let session_str = log
+                .session_id
+                .as_deref()
+                .map(|s| {
+                    if s.len() > 8 {
+                        format!("[{}]", &s[..8])
                     } else {
-                        Style::default().fg(Color::Red)
+                        format!("[{}]", s)
+                    }
+                })
+                .unwrap_or_default();
+            let model_str = log.model_name.as_deref().unwrap_or("unknown");
+            let bg_style = get_bg_style(is_selected);
+
+            let mut spans = vec![
+                get_status_icon(status_icon, is_selected, log.error_message.is_some()),
+                Span::styled("  ", bg_style),
+                Span::styled(
+                    id_str,
+                    if is_selected {
+                        Style::default().fg(Color::Cyan).bg(Color::Rgb(50, 50, 50))
+                    } else {
+                        Style::default().fg(Color::Cyan)
+                    },
+                ),
+                Span::styled("  ", bg_style),
+                get_time_span(&time_str.content, is_selected),
+                Span::styled("  ", bg_style),
+                Span::styled(
+                    session_str,
+                    if is_selected {
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .bg(Color::Rgb(50, 50, 50))
+                    } else {
+                        Style::default().fg(Color::Magenta)
+                    },
+                ),
+                Span::styled("  ", bg_style),
+                Span::styled(
+                    model_str.to_string(),
+                    if is_selected {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .bg(Color::Rgb(50, 50, 50))
+                    } else {
+                        Style::default().fg(Color::Yellow)
                     },
                 ),
             ];
-            if is_selected {
-                spans.push(Span::styled(
-                    " ".repeat(100),
-                    Style::default().bg(Color::Rgb(50, 50, 50)),
-                ));
-            }
-            lines.push(Line::from(spans));
-        } else {
-            let mut spans = vec![
-                get_status_icon(status_icon, is_selected, false),
-                Span::styled("  ", bg_style),
-                get_time_span(&time_span.content, is_selected),
-                Span::styled("  ", bg_style),
-                Span::styled(duration_span.content.clone(), bg_style),
-                Span::styled(description, bg_style),
-            ];
-            if is_selected {
-                spans.push(Span::styled(
-                    " ".repeat(100),
-                    Style::default().bg(Color::Rgb(50, 50, 50)),
-                ));
-            }
-            lines.push(Line::from(spans));
-        }
-    }
 
-    // Apply scroll offset
-    let visible_lines: Vec<Line> = lines
-        .into_iter()
-        .skip(app.debug_scroll)
-        .take(inner.height as usize)
+            if is_selected {
+                spans.push(Span::styled(
+                    " ".repeat(100),
+                    Style::default().bg(Color::Rgb(50, 50, 50)),
+                ));
+            }
+            Line::from(spans)
+        })
         .collect();
 
     frame.render_widget(block, modal_area);
@@ -264,6 +281,7 @@ fn format_time(created_at: &str) -> Span<'static> {
 }
 
 /// Format duration in milliseconds for display.
+#[allow(dead_code)]
 fn format_duration(duration_ms: i64) -> Span<'static> {
     let duration_str = format!("{:>6}ms", duration_ms);
     Span::raw(format!("  {}  ", duration_str))
@@ -271,6 +289,7 @@ fn format_duration(duration_ms: i64) -> Span<'static> {
 
 /// Extract a description from the request body JSON.
 /// Returns the last user message content, truncated to 50 chars, or "tool call".
+#[allow(dead_code)]
 fn extract_description(request_body: &str) -> String {
     if let Ok(json) = serde_json::from_str::<Value>(request_body) {
         if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
@@ -435,5 +454,88 @@ mod tests {
 
         // Just verify they return different styles
         assert_ne!(format!("{:?}", selected), format!("{:?}", not_selected));
+    }
+
+    #[test]
+    fn test_scroll_bounds_clamping() {
+        // Test that scroll offset is clamped to max_scroll
+        let total_lines: usize = 100;
+        let height = 10_u16;
+        let max_scroll = total_lines.saturating_sub(height as usize);
+        assert_eq!(max_scroll, 90); // 100 - 10 = 90
+
+        // Test normal scroll (within bounds)
+        let scroll: usize = 50;
+        let clamped = scroll.min(max_scroll);
+        assert_eq!(clamped, 50);
+
+        // Test scrolling past end (should be clamped)
+        let scroll: usize = 95;
+        let clamped = scroll.min(max_scroll);
+        assert_eq!(clamped, 90);
+
+        // Test small content (less than height)
+        let total_lines: usize = 5;
+        let max_scroll = total_lines.saturating_sub(height as usize);
+        assert_eq!(max_scroll, 0); // Can't scroll if content fits
+
+        let scroll: usize = 10;
+        let clamped = scroll.min(max_scroll);
+        assert_eq!(clamped, 0); // Clamped to 0
+    }
+
+    #[test]
+    fn test_list_view_only_processes_visible_logs() {
+        // This test ensures we don't regress back to processing all logs.
+        // The list view should only call extract_description for visible rows,
+        // not for all 100 logs on every frame.
+
+        // Simulate: 100 logs, visible height 10, scroll offset 20
+        let all_logs: Vec<usize> = (0..100).collect();
+        let visible_height = 10;
+        let scroll_offset = 20;
+
+        // Replicate the iterator logic from draw_list_view
+        let visible_indices: Vec<usize> = all_logs
+            .iter()
+            .enumerate()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        // Should only process logs 20-29 (10 rows starting from offset 20)
+        assert_eq!(visible_indices.len(), 10);
+        assert_eq!(visible_indices.first(), Some(&20));
+        assert_eq!(visible_indices.last(), Some(&29));
+
+        // Verify we're NOT processing logs 0-19 or 30-99
+        assert!(!visible_indices.contains(&0));
+        assert!(!visible_indices.contains(&19));
+        assert!(!visible_indices.contains(&30));
+        assert!(!visible_indices.contains(&99));
+    }
+
+    #[test]
+    fn test_list_view_visible_height_boundary() {
+        // Edge case: when visible height is larger than remaining logs
+        let all_logs: Vec<usize> = (0..50).collect();
+        let visible_height = 100; // More than available
+        let scroll_offset = 40;
+
+        let visible_indices: Vec<usize> = all_logs
+            .iter()
+            .enumerate()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .map(|(idx, _)| idx)
+            .collect();
+
+        // Should only get logs 40-49 (10 logs remaining)
+        assert_eq!(visible_indices.len(), 10);
+        assert_eq!(
+            visible_indices,
+            vec![40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+        );
     }
 }

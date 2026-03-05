@@ -162,6 +162,7 @@ fn test_save_and_load_api_log() {
         None,
         None,
         None,
+        None,
     )
     .expect("Failed to save API log");
 
@@ -191,6 +192,7 @@ fn test_save_api_log_with_error() {
         None,
         None,
         None,
+        None,
     )
     .expect("Failed to save API log");
 
@@ -209,6 +211,7 @@ fn test_clear_api_logs() {
         None,
         None,
         50,
+        None,
         None,
         None,
         None,
@@ -237,6 +240,7 @@ fn test_recent_api_logs_limit() {
             None,
             None,
             50,
+            None,
             None,
             None,
             None,
@@ -309,6 +313,7 @@ fn test_save_api_log_with_all_fields() {
         Some("test-provider"),
         None,
         None,
+        None,
     )
     .expect("Failed to save API log");
 
@@ -340,6 +345,7 @@ fn test_save_api_log_with_model_name() {
         None,
         None,
         None,
+        None,
     )
     .expect("Failed to save API log");
 
@@ -355,7 +361,7 @@ fn test_save_api_log_with_none_fields() {
 
     let request = r#"{"model":"test"}"#;
 
-    db.save_api_log(request, None, None, 100, None, None, None, None, None)
+    db.save_api_log(request, None, None, 100, None, None, None, None, None, None)
         .expect("Failed to save API log");
 
     let logs = db.recent_api_logs(10).expect("Failed to load API logs");
