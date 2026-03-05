@@ -1198,3 +1198,99 @@ pub fn handle_ask_question_submit(app: &mut App) {
         app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::App;
+    use crossterm::event::KeyEventKind;
+    use indexmap::IndexMap;
+
+    fn create_test_app() -> App {
+        let modes = IndexMap::new();
+        App::new(
+            false,
+            None,
+            "test".to_string(),
+            modes,
+            None,
+            "test_session".to_string(),
+            ".".to_string(),
+            Vec::new(),
+        )
+    }
+
+    #[test]
+    fn test_batch_process_multiple_character_events() {
+        // This test verifies that when multiple KeyCode::Char events are processed
+        // in sequence (as they would be when batched from a paste), they all accumulate
+        // in the input correctly, without any intermediate rendering.
+        let mut app = create_test_app();
+
+        // Simulate a paste of "hello" - 5 character events
+        let chars = vec!['h', 'e', 'l', 'l', 'o'];
+        for c in chars {
+            let key = KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            };
+            let _ = handle_key_event(&mut app, key);
+        }
+
+        // All characters should be accumulated in one render cycle
+        assert_eq!(app.input, "hello");
+        assert_eq!(app.cursor_pos, 5);
+    }
+
+    #[test]
+    fn test_batch_process_long_paste() {
+        // Simulate pasting 50 lines of text
+        let mut app = create_test_app();
+        let long_text = "line1\nline2\nline3\n";
+
+        for c in long_text.chars() {
+            let key = KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            };
+            let _ = handle_key_event(&mut app, key);
+        }
+
+        assert_eq!(app.input, "line1\nline2\nline3\n");
+        assert_eq!(app.cursor_pos, long_text.len());
+    }
+
+    #[test]
+    fn test_batch_multiple_keys_with_backspace() {
+        // Test that batching works with mixed key events
+        let mut app = create_test_app();
+
+        // Type "hello"
+        for c in "hello".chars() {
+            let key = KeyEvent {
+                code: KeyCode::Char(c),
+                modifiers: KeyModifiers::empty(),
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            };
+            let _ = handle_key_event(&mut app, key);
+        }
+        assert_eq!(app.input, "hello");
+
+        // Backspace once
+        let backspace_key = KeyEvent {
+            code: KeyCode::Backspace,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::empty(),
+        };
+        let _ = handle_key_event(&mut app, backspace_key);
+
+        assert_eq!(app.input, "hell");
+        assert_eq!(app.cursor_pos, 4);
+    }
+}

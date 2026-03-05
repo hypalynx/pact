@@ -1369,10 +1369,8 @@ impl App {
                     self.set_status("Enter API key (press Enter when done)", StatusLevel::Info);
                 }
                 SlashCommand::New => {
-                    // Start a new session: generate new session ID, clear messages, reset tokens
+                    // Start a new session: generate new session ID, clear messages but keep history for navigation
                     self.messages.clear();
-                    self.history.clear();
-                    self.history_index = None;
                     self.unsent_draft.clear();
                     self.unsent_cursor_pos = 0;
                     self.auto_scroll = true;
@@ -1398,9 +1396,9 @@ impl App {
                 }
                 SlashCommand::Clear => {
                     // Clear current session context but keep the session ID
+                    // Note: We intentionally do NOT clear history here - /clear is an alias
+                    // for /new, and both should preserve input history for navigation
                     self.messages.clear();
-                    self.history.clear();
-                    self.history_index = None;
                     self.unsent_draft.clear();
                     self.unsent_cursor_pos = 0;
                     self.auto_scroll = true;

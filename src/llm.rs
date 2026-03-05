@@ -104,7 +104,8 @@ fn parse_qwen_xml_tool_call(
         let cleaned_value = value.replace("\n", "").replace("\r", "").trim().to_string();
 
         // Try to parse value as JSON, otherwise use as string
-        let json_value = serde_json::from_str(&cleaned_value).unwrap_or(serde_json::Value::String(cleaned_value));
+        let json_value = serde_json::from_str(&cleaned_value)
+            .unwrap_or(serde_json::Value::String(cleaned_value));
         args.insert(key, json_value);
 
         remaining = &remaining[value_start + value_end + 12..];
@@ -120,7 +121,9 @@ fn parse_qwen_xml_tool_call(
     }
 }
 /// Clean tool call arguments by removing embedded newlines and trimming string values
-fn clean_tool_args(args: serde_json::Map<String, serde_json::Value>) -> serde_json::Map<String, serde_json::Value> {
+fn clean_tool_args(
+    args: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
     let mut cleaned = serde_json::Map::new();
     for (key, value) in args {
         let cleaned_value = match value {
@@ -602,8 +605,7 @@ pub fn call_llm(
             // Parsing failed - try cleaning embedded newlines and retry
             // Remove literal newlines from string values in JSON
             let cleaned = fixed_args.replace("\\n", "");
-            if let Ok(args_json) =
-                serde_json::from_str::<serde_json::Value>(&cleaned)
+            if let Ok(args_json) = serde_json::from_str::<serde_json::Value>(&cleaned)
                 && let Some(args_obj) = args_json.as_object()
             {
                 // Successfully parsed after cleanup!
@@ -611,7 +613,10 @@ pub fn call_llm(
             } else {
                 // Still can't parse - create a fallback with raw arguments as a string
                 let mut fallback = serde_json::Map::new();
-                fallback.insert("_raw_arguments".to_string(), serde_json::Value::String(fixed_args));
+                fallback.insert(
+                    "_raw_arguments".to_string(),
+                    serde_json::Value::String(fixed_args),
+                );
                 fallback
             }
         };
@@ -719,7 +724,10 @@ mod tests {
 
         let (_id, name, args) = result.unwrap();
         assert_eq!(name, "Read");
-        assert_eq!(args.get("filePath").and_then(|v| v.as_str()).unwrap(), "/etc/passwd");
+        assert_eq!(
+            args.get("filePath").and_then(|v| v.as_str()).unwrap(),
+            "/etc/passwd"
+        );
     }
 
     #[test]
@@ -801,7 +809,10 @@ mod tests {
                 map = v.as_object().unwrap().clone();
             }
             _ => {
-                map.insert("_raw_arguments".to_string(), serde_json::Value::String(unparseable.to_string()));
+                map.insert(
+                    "_raw_arguments".to_string(),
+                    serde_json::Value::String(unparseable.to_string()),
+                );
             }
         }
 
@@ -817,8 +828,14 @@ mod tests {
     fn test_clean_tool_args_removes_embedded_newlines() {
         // Real case from logs: Grep with newlines in files and pattern
         let mut args = serde_json::Map::new();
-        args.insert("files".to_string(), serde_json::Value::String("\nsrc/app.rs\n".to_string()));
-        args.insert("pattern".to_string(), serde_json::Value::String("\nKey::Up|Key::Down\n".to_string()));
+        args.insert(
+            "files".to_string(),
+            serde_json::Value::String("\nsrc/app.rs\n".to_string()),
+        );
+        args.insert(
+            "pattern".to_string(),
+            serde_json::Value::String("\nKey::Up|Key::Down\n".to_string()),
+        );
 
         let cleaned = clean_tool_args(args);
 
@@ -836,7 +853,10 @@ mod tests {
     fn test_clean_tool_args_handles_escaped_newlines() {
         // Tool call with escaped \n sequences
         let mut args = serde_json::Map::new();
-        args.insert("filePath".to_string(), serde_json::Value::String("src/app.rs\\n".to_string()));
+        args.insert(
+            "filePath".to_string(),
+            serde_json::Value::String("src/app.rs\\n".to_string()),
+        );
 
         let cleaned = clean_tool_args(args);
 

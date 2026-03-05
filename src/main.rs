@@ -234,22 +234,37 @@ fn main() -> std::io::Result<()> {
         }
 
         // Poll for terminal events (16ms timeout for smooth UI at 60fps)
+        // Batch all queued events before rendering to avoid flickering during pastes
+        let mut should_exit = false;
         if crossterm::event::poll(Duration::from_millis(16))? {
-            match crossterm::event::read()? {
-                Event::Key(key) => {
-                    if key.kind != KeyEventKind::Press {
-                        continue;
+            loop {
+                match crossterm::event::read()? {
+                    Event::Key(key) => {
+                        if key.kind != KeyEventKind::Press {
+                            // Consume but don't process key release events
+                        } else {
+                            // Returns false if user pressed Ctrl+C to exit
+                            if !event::handle_key_event(&mut app, key) {
+                                should_exit = true;
+                                break;
+                            }
+                        }
                     }
-                    // Returns false if user pressed Ctrl+C to exit
-                    if !event::handle_key_event(&mut app, key) {
-                        break;
+                    Event::Mouse(mouse) => {
+                        event::handle_mouse_event(&mut app, mouse);
                     }
+                    _ => {}
                 }
-                Event::Mouse(mouse) => {
-                    event::handle_mouse_event(&mut app, mouse);
+
+                // Try to read more queued events without waiting
+                if !crossterm::event::poll(Duration::from_millis(0))? {
+                    break;
                 }
-                _ => {}
             }
+        }
+
+        if should_exit {
+            break;
         }
 
         app.frame_count = app.frame_count.wrapping_add(1);

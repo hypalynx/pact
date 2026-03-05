@@ -16,8 +16,18 @@
   previous history
 - [ ] **Add automated test action for CI/CD pipeline**
   - Run `make test` on every PR/commit to confirm formatting, linting, and all 118 tests pass
+- [ ] we seem to be printing out the output for bash commands -
+  see api logs for session 9013888 for more info, this is fine
+  for small output but we should truncate in the middle like we
+    do for reads but probably more agressively for message
+      history display.
 - [ ] when the LLM is busy, I can't see my cursor (though I can
   type) in the input box
+- [ ] esc should work to cancel context even if halfway through
+  typing in the input box
+- [ ] creating a task should show the current todo list in full
+  in the message buffer/section even if we are sending the json
+  with id back to the LLM to work with.
 - [ ] user input messages during generation are not queued and
   played after the LLM stops.. they just get input to the message
   history and not executed.
