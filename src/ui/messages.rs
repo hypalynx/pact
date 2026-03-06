@@ -3,7 +3,7 @@ use crate::text::{render_message, wrap_text};
 use crate::ui::colors::*;
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -143,7 +143,28 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
                             tool_fg
                         };
 
-                        for (line_text, spans) in render_message(content, available_width) {
+                        // Truncate bash output for display (full content still sent to LLM)
+                        let display_content: std::borrow::Cow<str> = if matches!(
+                            msg.tool_name.as_deref(),
+                            Some("Bash") | Some("bash")
+                        ) {
+                            const MAX_BASH_DISPLAY_LINES: usize = 20;
+                            let lines: Vec<&str> = content.lines().collect();
+                            if lines.len() > MAX_BASH_DISPLAY_LINES {
+                                let truncated = lines[..MAX_BASH_DISPLAY_LINES].join("\n");
+                                std::borrow::Cow::Owned(format!(
+                                    "{}\n[... {} more lines ...]",
+                                    truncated,
+                                    lines.len() - MAX_BASH_DISPLAY_LINES
+                                ))
+                            } else {
+                                std::borrow::Cow::Borrowed(content)
+                            }
+                        } else {
+                            std::borrow::Cow::Borrowed(content)
+                        };
+
+                        for (line_text, spans) in render_message(&display_content, available_width) {
                             let mut padded_spans = vec![Span::raw("  ")];
                             // Apply tool result styling: tint all spans with tool_fg color
                             for span in spans {
@@ -175,16 +196,24 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
         } else {
             // Render thinking tokens first (if present)
             if let Some(thinking) = &msg.thinking {
-                let wrapped = wrap_text(thinking, available_width);
                 let thinking_color = if is_dimmed {
                     DIM_THINKING
                 } else {
                     Color::DarkGray
                 };
-                for line_text in wrapped {
-                    let style = Style::default().fg(thinking_color).italic();
-                    let padded = format!("  {}  ", line_text);
-                    lines.push(Line::from(vec![Span::styled(padded, style)]));
+                for (line_text, spans) in render_message(thinking, available_width) {
+                    let mut padded_spans = vec![Span::raw("  ")];
+                    for span in spans {
+                        let new_style = span.style.add_modifier(Modifier::ITALIC);
+                        let new_style = if new_style.fg.is_none() {
+                            new_style.fg(thinking_color)
+                        } else {
+                            new_style
+                        };
+                        padded_spans.push(Span::styled(span.content.to_string(), new_style));
+                    }
+                    padded_spans.push(Span::raw("  "));
+                    lines.push(Line::from(padded_spans));
                     text_lines.push(line_text);
                 }
                 // Empty line between thinking and response (only if there's response text)
@@ -225,16 +254,24 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
 
     // Render pending thinking tokens (while streaming)
     if !app.pending_thinking.is_empty() {
-        let wrapped = wrap_text(&app.pending_thinking, available_width);
         let thinking_color = if is_dimmed {
             DIM_THINKING
         } else {
             Color::DarkGray
         };
-        for line_text in wrapped {
-            let style = Style::default().fg(thinking_color).italic();
-            let padded = format!("  {}  ", line_text);
-            lines.push(Line::from(vec![Span::styled(padded, style)]));
+        for (line_text, spans) in render_message(&app.pending_thinking, available_width) {
+            let mut padded_spans = vec![Span::raw("  ")];
+            for span in spans {
+                let new_style = span.style.add_modifier(Modifier::ITALIC);
+                let new_style = if new_style.fg.is_none() {
+                    new_style.fg(thinking_color)
+                } else {
+                    new_style
+                };
+                padded_spans.push(Span::styled(span.content.to_string(), new_style));
+            }
+            padded_spans.push(Span::raw("  "));
+            lines.push(Line::from(padded_spans));
             text_lines.push(line_text);
         }
         // Empty line between thinking and response
