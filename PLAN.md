@@ -9,9 +9,7 @@
 - [ ] Paste handling improvement (show token for multiple lines pasted)
 - [ ] Truncate bash command output more aggressively
 - [ ] Format thinking text as markdown
-- [ ] Reading file message should show offset/lines being read
 - [ ] Fix email tokenization issue (e.g., @example.com shouldn't look like a file path)
-- [ ] Scrolling in debug view for specific records
 
 ## 🚀 Feature Implementation
 - [ ] Add automated test action for CI/CD pipeline (run `make test` on every PR/commit)

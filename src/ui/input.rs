@@ -80,6 +80,9 @@ pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
 
 /// Colorize input text, highlighting @mentions in yellow.
 /// Returns spans with appropriate colors based on dimmed state.
+///
+/// File references (@file.txt) are highlighted, but email addresses (user@domain.com)
+/// are not, since they have alphanumeric text immediately before the @.
 pub fn colorize_input(input: &str, is_dimmed: bool) -> Vec<Span<'static>> {
     let dim_fg = if is_dimmed { DIM_TEXT } else { Color::White };
     let dim_at = if is_dimmed { DIM_AT } else { Color::Yellow };
@@ -90,6 +93,16 @@ pub fn colorize_input(input: &str, is_dimmed: bool) -> Vec<Span<'static>> {
 
     while let Some(ch) = chars.next() {
         if ch == '@' {
+            // Check if @ is preceded by alphanumeric text (indicating email, not file reference)
+            let preceded_by_alphanumeric = !current.is_empty()
+                && current.chars().last().map_or(false, |c| c.is_alphanumeric());
+
+            if preceded_by_alphanumeric {
+                // This looks like an email address (user@domain), not a file reference
+                current.push('@');
+                continue;
+            }
+
             // Look ahead to see if this starts a valid mention
             let mut word = String::from("@");
             let mut has_valid_chars = false;
@@ -281,8 +294,10 @@ mod tests {
     #[test]
     fn test_colorize_input_mention_at_end_no_space() {
         let spans = colorize_input("text@file", false);
-        // @ not preceded by space - still detected as mention
-        assert_eq!(spans.len(), 2);
+        // @ preceded by alphanumeric looks like email, not a file reference
+        // File references need whitespace/punctuation boundary before @
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "text@file");
     }
 
     #[test]
@@ -290,5 +305,32 @@ mod tests {
         let spans = colorize_input("see @path/to/file_name-test.txt", false);
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[1].content, "@path/to/file_name-test.txt");
+    }
+
+    #[test]
+    fn test_colorize_input_email_not_highlighted() {
+        // Email addresses should NOT be highlighted as mentions
+        let spans = colorize_input("me@example.com", false);
+        // Should be all one span, not highlighting @example.com
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "me@example.com");
+    }
+
+    #[test]
+    fn test_colorize_input_email_in_context() {
+        // Email in a sentence should not be highlighted
+        let spans = colorize_input("send to user@domain.org please", false);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "send to user@domain.org please");
+    }
+
+    #[test]
+    fn test_colorize_input_file_reference_with_space() {
+        // File reference preceded by space should work
+        let spans = colorize_input("check @config.json here", false);
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].content, "check ");
+        assert_eq!(spans[1].content, "@config.json");
+        assert_eq!(spans[2].content, " here");
     }
 }
