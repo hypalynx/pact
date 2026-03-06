@@ -201,6 +201,9 @@ pub struct App {
     // Retry handling for invalid tool calls
     pub needs_retry: bool,
 
+    // Queue user messages submitted while LLM is generating
+    pub pending_user_send: bool,
+
     // Task management
     pub tasks: Vec<Task>,
     pub task_id_counter: u32,
@@ -302,6 +305,7 @@ impl App {
             session_id,
             working_directory,
             needs_retry: false,
+            pending_user_send: false,
             tasks: Vec::new(),
             task_id_counter: 1,
             pending_ask_question: None,
@@ -407,6 +411,7 @@ impl App {
     pub fn send_to_llm(&mut self) {
         // Safety net: reject if call already active
         if self.active_llm_calls > 0 {
+            self.pending_user_send = true;
             return;
         }
 

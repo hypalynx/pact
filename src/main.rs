@@ -233,6 +233,15 @@ fn main() -> std::io::Result<()> {
             app.send_to_llm();
         }
 
+        // Auto-send queued user message when idle
+        if app.pending_user_send
+            && app.active_llm_calls == 0
+            && app.pending_tool_count == 0
+        {
+            app.pending_user_send = false;
+            app.send_to_llm();
+        }
+
         // Poll for terminal events (16ms timeout for smooth UI at 60fps)
         // Batch all queued events before rendering to avoid flickering during pastes
         let mut should_exit = false;

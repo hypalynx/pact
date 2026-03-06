@@ -7,12 +7,9 @@
 
 ## 🎨 UI/UX Improvements
 - [ ] Paste handling improvement (show token for multiple lines pasted)
-- [ ] Fix up arrow access after /new or /clear commands
 - [ ] Truncate bash command output more aggressively
 - [ ] Show cursor when LLM is busy
-- [ ] ESC key to cancel context even during input
 - [ ] Format thinking text as markdown
-- [ ] /new or /clear should default back to default mode
 - [ ] Reading file message should show offset/lines being read
 - [ ] Fix email tokenization issue (e.g., @example.com shouldn't look like a file path)
 - [ ] Remove AskUserQuestion/AskQuestion - LLM questions work normally
