@@ -574,7 +574,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     // Handle main input keys
     match key.code {
         KeyCode::Esc => {
-            if app.input.is_empty() && app.active_llm_calls > 0 {
+            if app.active_llm_calls > 0 {
                 if app.is_cancel_confirming() {
                     // Second ESC press - actually cancel
                     app.cancel_current_call();

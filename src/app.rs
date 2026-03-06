@@ -138,6 +138,7 @@ pub struct App {
     pub auto_scroll: bool,
     pub rendered_line_count: usize,
     pub dragging_scrollbar: bool,
+    pub default_mode_name: String,
     pub mode_name: String,
     pub available_modes: Vec<String>,
     pub modes_config: IndexMap<String, crate::config::Mode>,
@@ -253,6 +254,7 @@ impl App {
             auto_scroll: true,
             rendered_line_count: 0,
             dragging_scrollbar: false,
+            default_mode_name: mode_name.clone(),
             mode_name,
             available_modes,
             modes_config,
@@ -1385,6 +1387,12 @@ impl App {
                     if let Some(db) = &self.db {
                         let _ = db.create_session(&self.session_id, &self.working_directory, None);
                     }
+                    // Reset mode to default
+                    self.mode_name = self.default_mode_name.clone();
+                    if let Some(mode_config) = self.modes_config.get(&self.mode_name) {
+                        self.temperature = mode_config.temperature;
+                        self.mode_color = mode_config.color.clone();
+                    }
                     // Remove the slash command from input
                     let slash_start = picker.slash_start;
                     self.input.drain(slash_start..self.cursor_pos);
@@ -1404,6 +1412,12 @@ impl App {
                     self.auto_scroll = true;
                     if let Some(db) = &self.db {
                         let _ = db.clear_session_messages(&self.session_id);
+                    }
+                    // Reset mode to default
+                    self.mode_name = self.default_mode_name.clone();
+                    if let Some(mode_config) = self.modes_config.get(&self.mode_name) {
+                        self.temperature = mode_config.temperature;
+                        self.mode_color = mode_config.color.clone();
                     }
                     // Remove the slash command from input
                     let slash_start = picker.slash_start;
