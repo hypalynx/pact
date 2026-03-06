@@ -312,8 +312,6 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
     // Try to read the file
     match fs::read_to_string(&full_path) {
         Ok(content) => {
-            let summary = format!("Reading {}", filename);
-
             // Apply offset and limit output
             let all_lines: Vec<&str> = content.lines().collect();
             let total_lines = all_lines.len();
@@ -322,7 +320,30 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
             let lines_from_offset: Vec<&str> = all_lines.iter().skip(offset).cloned().collect();
             let lines_from_offset_count = lines_from_offset.len();
 
-            // Apply line limit with smart truncation
+            // Calculate the line range being shown
+            let summary = if lines_from_offset_count > MAX_OUTPUT_LINES {
+                // File is truncated - showing head_lines + MAX_OUTPUT_CONTEXT
+                let head_lines = MAX_OUTPUT_LINES - MAX_OUTPUT_CONTEXT;
+                let lines_shown = head_lines + MAX_OUTPUT_CONTEXT;
+                let end_line = offset + lines_shown;
+                if offset > 0 {
+                    format!("Reading {} (lines {}-{} of {})", filename, offset + 1, end_line, total_lines)
+                } else {
+                    format!("Reading {} (lines 1-{} of {})", filename, lines_shown, total_lines)
+                }
+            } else {
+                // File is not truncated - showing all remaining lines
+                let end_line = offset + lines_from_offset_count;
+                if offset > 0 {
+                    format!("Reading {} (lines {}-{} of {})", filename, offset + 1, end_line, total_lines)
+                } else if total_lines == 1 {
+                    format!("Reading {} (1 line)", filename)
+                } else {
+                    format!("Reading {} (lines 1-{})", filename, lines_from_offset_count)
+                }
+            };
+
+            // Build result content
             let result = if lines_from_offset_count > MAX_OUTPUT_LINES {
                 let head_lines = MAX_OUTPUT_LINES - MAX_OUTPUT_CONTEXT;
                 let head: Vec<&str> = lines_from_offset.iter().take(head_lines).cloned().collect();
