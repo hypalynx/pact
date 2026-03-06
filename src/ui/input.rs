@@ -12,16 +12,8 @@ use ratatui::{
 /// Draw the input box with text wrapping, cursor positioning, and @mention highlighting.
 pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
     // Dimmed input background when modal is open
-    let input_bg = if is_dimmed {
-        DIM_BG
-    } else {
-        Color::Black
-    };
-    let input_fg = if is_dimmed {
-        DIM_TEXT
-    } else {
-        Color::White
-    };
+    let input_bg = if is_dimmed { DIM_BG } else { Color::Black };
+    let input_fg = if is_dimmed { DIM_TEXT } else { Color::White };
 
     let margin = Paragraph::new("").style(Style::default().bg(input_bg));
     frame.render_widget(margin, app.input_rect);
@@ -94,8 +86,8 @@ pub fn colorize_input(input: &str, is_dimmed: bool) -> Vec<Span<'static>> {
     while let Some(ch) = chars.next() {
         if ch == '@' {
             // Check if @ is preceded by alphanumeric text (indicating email, not file reference)
-            let preceded_by_alphanumeric = !current.is_empty()
-                && current.chars().last().map_or(false, |c| c.is_alphanumeric());
+            let preceded_by_alphanumeric =
+                !current.is_empty() && current.chars().last().is_some_and(|c| c.is_alphanumeric());
 
             if preceded_by_alphanumeric {
                 // This looks like an email address (user@domain), not a file reference

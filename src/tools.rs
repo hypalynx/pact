@@ -327,15 +327,30 @@ fn execute_read(args: &serde_json::Map<String, Value>) -> (String, String) {
                 let lines_shown = head_lines + MAX_OUTPUT_CONTEXT;
                 let end_line = offset + lines_shown;
                 if offset > 0 {
-                    format!("Reading {} (lines {}-{} of {})", filename, offset + 1, end_line, total_lines)
+                    format!(
+                        "Reading {} (lines {}-{} of {})",
+                        filename,
+                        offset + 1,
+                        end_line,
+                        total_lines
+                    )
                 } else {
-                    format!("Reading {} (lines 1-{} of {})", filename, lines_shown, total_lines)
+                    format!(
+                        "Reading {} (lines 1-{} of {})",
+                        filename, lines_shown, total_lines
+                    )
                 }
             } else {
                 // File is not truncated - showing all remaining lines
                 let end_line = offset + lines_from_offset_count;
                 if offset > 0 {
-                    format!("Reading {} (lines {}-{} of {})", filename, offset + 1, end_line, total_lines)
+                    format!(
+                        "Reading {} (lines {}-{} of {})",
+                        filename,
+                        offset + 1,
+                        end_line,
+                        total_lines
+                    )
                 } else if total_lines == 1 {
                     format!("Reading {} (1 line)", filename)
                 } else {

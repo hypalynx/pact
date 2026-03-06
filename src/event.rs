@@ -1061,7 +1061,6 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
