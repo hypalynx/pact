@@ -43,14 +43,6 @@ pub struct Task {
     pub blocked_by: Vec<u32>,
 }
 
-pub struct AskQuestionModal {
-    pub tool_call_id: String,
-    pub question: String,
-    pub options: Vec<String>,
-    pub input: String,
-    pub cursor_pos: usize,
-}
-
 pub struct FilePicker {
     pub query: String,
     pub at_start: usize, // byte offset in `input` where @ was typed
@@ -207,7 +199,6 @@ pub struct App {
     // Task management
     pub tasks: Vec<Task>,
     pub task_id_counter: u32,
-    pub pending_ask_question: Option<AskQuestionModal>,
 
     // Ctrl+X prefix key state
     pub pending_ctrl_x: bool,
@@ -308,7 +299,6 @@ impl App {
             pending_user_send: false,
             tasks: Vec::new(),
             task_id_counter: 1,
-            pending_ask_question: None,
             pending_ctrl_x: false,
         }
     }

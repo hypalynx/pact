@@ -63,78 +63,6 @@ pub fn draw_bash_confirm(app: &App, frame: &mut Frame) {
     }
 }
 
-/// Draw the ask question modal.
-/// Shows a question with multiple choice options or freeform input.
-pub fn draw_ask_question(app: &App, frame: &mut Frame) {
-    if let Some(modal) = &app.pending_ask_question {
-        let height = (5 + modal.options.len() as u16).min(15);
-        let area = Rect {
-            x: app.input_rect.x,
-            y: app.input_rect.y.saturating_sub(height),
-            width: app.input_rect.width,
-            height,
-        };
-
-        if app.input_rect.y >= height {
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_set(symbols::border::EMPTY)
-                .title("Question")
-                .style(Style::default().bg(Color::Black));
-
-            let inner = area.inner(Margin {
-                vertical: 1,
-                horizontal: 1,
-            });
-
-            frame.render_widget(Clear, area);
-            frame.render_widget(block, area);
-
-            let mut lines = Vec::new();
-
-            // Question text
-            lines.push(Line::from(Span::styled(
-                modal.question.clone(),
-                Style::default().fg(Color::Cyan),
-            )));
-
-            // Options
-            if !modal.options.is_empty() {
-                lines.push(Line::from("")); // Blank line
-                for (idx, option) in modal.options.iter().enumerate() {
-                    let is_selected = Some(idx) == get_selected_index(&modal.input, idx);
-                    let style = if is_selected {
-                        Style::default().bg(Color::Rgb(50, 50, 50)).fg(Color::White)
-                    } else {
-                        Style::default().fg(Color::DarkGray)
-                    };
-
-                    let option_text = if option.len() > (inner.width as usize).saturating_sub(4) {
-                        format!("{}...", &option[..inner.width.saturating_sub(7) as usize])
-                    } else {
-                        option.clone()
-                    };
-
-                    let prefix = if is_selected { "▸ " } else { "  " };
-                    lines.push(Line::from(vec![
-                        Span::styled(prefix, style),
-                        Span::styled(option_text, style),
-                    ]));
-                }
-            } else {
-                // Freeform input mode
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    format!("> {}", truncate_text(&modal.input, inner.width as usize, 3)),
-                    Style::default().fg(Color::White),
-                )));
-            }
-
-            frame.render_widget(Paragraph::new(lines), inner);
-        }
-    }
-}
-
 /// Truncate text with ellipsis if it exceeds available width.
 /// The padding parameter accounts for prefix characters (like "  " or "> ").
 fn truncate_text(text: &str, max_width: usize, padding: usize) -> String {
@@ -144,15 +72,6 @@ fn truncate_text(text: &str, max_width: usize, padding: usize) -> String {
     } else {
         text.to_string()
     }
-}
-
-/// Determine if an option index should be selected based on current input.
-/// Returns the index if the input is a valid number matching that index.
-fn get_selected_index(input: &str, default_idx: usize) -> Option<usize> {
-    if input.is_empty() {
-        return None;
-    }
-    input.trim().parse::<usize>().ok().or(Some(default_idx))
 }
 
 #[cfg(test)]
@@ -181,25 +100,5 @@ mod tests {
         assert_eq!(truncate_text("123456", 5, 0), "12...");
         // Very small available space
         assert_eq!(truncate_text("test", 3, 0), "...");
-    }
-
-    #[test]
-    fn test_get_selected_index_valid() {
-        assert_eq!(get_selected_index("0", 5), Some(0));
-        assert_eq!(get_selected_index("3", 5), Some(3));
-        assert_eq!(get_selected_index(" 2 ", 5), Some(2)); // whitespace trimmed
-    }
-
-    #[test]
-    fn test_get_selected_index_invalid() {
-        // Invalid input uses default
-        assert_eq!(get_selected_index("abc", 5), Some(5));
-        assert_eq!(get_selected_index("", 3), None);
-    }
-
-    #[test]
-    fn test_get_selected_index_out_of_range() {
-        // Out of range is still returned (caller should validate)
-        assert_eq!(get_selected_index("99", 5), Some(99));
     }
 }

@@ -323,32 +323,6 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                     });
                     return;
                 }
-                "AskQuestion" => {
-                    let question = args
-                        .get("question")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let options: Vec<String> = args
-                        .get("options")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                                .collect()
-                        })
-                        .unwrap_or_default();
-
-                    app.pending_ask_question = Some(crate::app::AskQuestionModal {
-                        tool_call_id: id,
-                        question,
-                        options,
-                        input: String::new(),
-                        cursor_pos: 0,
-                    });
-                    app.pending_tool_count += 1;
-                    return;
-                }
                 _ => {}
             }
 
@@ -551,11 +525,6 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
     // Handle bash confirmation mode
     if app.pending_bash_confirm.is_some() {
         return handle_bash_confirm_key(app, key);
-    }
-
-    // Handle AskQuestion modal
-    if app.pending_ask_question.is_some() {
-        return handle_ask_question_key(app, key);
     }
 
     // Handle panel-specific keys
@@ -1024,98 +993,6 @@ fn handle_bash_confirm_key(app: &mut App, key: KeyEvent) -> bool {
     true
 }
 
-fn handle_ask_question_key(app: &mut App, key: KeyEvent) -> bool {
-    if let Some(modal) = &mut app.pending_ask_question {
-        match key.code {
-            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                modal.cursor_pos = 0;
-            }
-            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                modal.cursor_pos = modal.input.len();
-            }
-            KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Kill word backward
-                if modal.cursor_pos > 0 {
-                    let mut pos = modal.cursor_pos;
-                    // Skip trailing spaces
-                    while pos > 0 && modal.input.chars().nth(pos - 1) == Some(' ') {
-                        pos -= 1;
-                    }
-                    // Delete word characters
-                    while pos > 0
-                        && modal
-                            .input
-                            .chars()
-                            .nth(pos - 1)
-                            .is_some_and(|c| !c.is_whitespace())
-                    {
-                        pos -= 1;
-                    }
-                    modal.input.drain(pos..modal.cursor_pos);
-                    modal.cursor_pos = pos;
-                }
-            }
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Kill line (from cursor to start)
-                modal.input.drain(0..modal.cursor_pos);
-                modal.cursor_pos = 0;
-            }
-            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if modal.cursor_pos < modal.input.len() {
-                    modal.cursor_pos += 1;
-                }
-            }
-            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if modal.cursor_pos > 0 {
-                    modal.cursor_pos -= 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                modal.input.insert(modal.cursor_pos, c);
-                modal.cursor_pos += 1;
-            }
-            KeyCode::Backspace => {
-                if modal.cursor_pos > 0 {
-                    modal.cursor_pos -= 1;
-                    modal.input.remove(modal.cursor_pos);
-                }
-            }
-            KeyCode::Delete => {
-                if modal.cursor_pos < modal.input.len() {
-                    modal.input.remove(modal.cursor_pos);
-                }
-            }
-            KeyCode::Left => {
-                if modal.cursor_pos > 0 {
-                    modal.cursor_pos -= 1;
-                }
-            }
-            KeyCode::Right => {
-                if modal.cursor_pos < modal.input.len() {
-                    modal.cursor_pos += 1;
-                }
-            }
-            KeyCode::Home => {
-                modal.cursor_pos = 0;
-            }
-            KeyCode::End => {
-                modal.cursor_pos = modal.input.len();
-            }
-            KeyCode::Enter => {
-                handle_ask_question_submit(app);
-                return true;
-            }
-            KeyCode::Esc => {
-                app.pending_ask_question = None;
-                app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
-                return true;
-            }
-            _ => {}
-        }
-    }
-    true
-}
-
 /// Handle mouse events
 pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
     // Debug panel is modal - if open, all scrolls go to it
@@ -1184,20 +1061,6 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent) {
     }
 }
 
-/// Handle AskQuestion modal submission
-pub fn handle_ask_question_submit(app: &mut App) {
-    if let Some(modal) = app.pending_ask_question.take() {
-        let answer = modal.input.clone();
-        let _ = app.tx.send(LlmEvent::ToolResult {
-            tool_name: "AskQuestion".to_string(),
-            tool_call_id: modal.tool_call_id,
-            summary: "Question answered".to_string(),
-            content: answer,
-            call_id: 0,
-        });
-        app.pending_tool_count = app.pending_tool_count.saturating_sub(1);
-    }
-}
 
 #[cfg(test)]
 mod tests {

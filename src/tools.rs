@@ -241,31 +241,6 @@ pub fn get_tool_definitions() -> Vec<Value> {
                 }
             }
         }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "AskQuestion",
-                "description": "Ask the user a question and get their response.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "question": {
-                            "type": "string",
-                            "description": "Question to ask the user"
-                        },
-                        "options": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
-                            "description": "Optional list of predefined answer options"
-                        }
-                    },
-                    "required": ["question"],
-                    "additionalProperties": false
-                }
-            }
-        }),
     ]
 }
 

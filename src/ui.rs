@@ -1,6 +1,6 @@
 use crate::app::App;
 use crate::text::wrap_text;
-use crate::ui::confirmations::{draw_ask_question, draw_bash_confirm};
+use crate::ui::confirmations::draw_bash_confirm;
 use crate::ui::debug::draw_debug_modal;
 use crate::ui::input::draw_input;
 use crate::ui::layout::*;
@@ -51,12 +51,7 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
         || app.pending_bash_confirm.is_some();
 
     draw_messages(app, frame, is_modal_open);
-    draw_input(
-        app,
-        frame,
-        is_modal_open,
-        app.pending_ask_question.is_some(),
-    );
+    draw_input(app, frame, is_modal_open);
     draw_status(app, frame, status_area, is_modal_open);
 
     // Note: We intentionally don't draw a solid overlay here.
@@ -93,10 +88,5 @@ pub fn draw_app(app: &mut App, frame: &mut Frame) {
     // Draw bash confirmation prompt if active
     if app.pending_bash_confirm.is_some() {
         draw_bash_confirm(app, frame);
-    }
-
-    // Draw ask question prompt if active
-    if app.pending_ask_question.is_some() {
-        draw_ask_question(app, frame);
     }
 }

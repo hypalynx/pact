@@ -6,7 +6,7 @@ use tempfile::NamedTempFile;
 #[test]
 fn test_get_tool_definitions() {
     let defs = get_tool_definitions();
-    assert_eq!(defs.len(), 12);
+    assert_eq!(defs.len(), 11);
 
     let tool = &defs[0];
     assert_eq!(tool.get("type").and_then(|v| v.as_str()), Some("function"));

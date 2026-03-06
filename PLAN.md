@@ -20,6 +20,11 @@
 - [ ] Implement subagents (possibly as tool calls)
 - [ ] Handle intermittent connections with retry mechanism
 - [ ] Creating a task should show full todo list in message buffer
+- [ ] pending input or.. input passed in while the llm is
+  responding doesn't retrigger a response and should also be
+  inserted into message history relative to when the llm responds
+  i.e initial input -> initial response -> queued response ->
+  response to queued input
 
 ## 🐛 Bug Fixes
 (none currently)

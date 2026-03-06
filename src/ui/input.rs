@@ -10,14 +10,14 @@ use ratatui::{
 };
 
 /// Draw the input box with text wrapping, cursor positioning, and @mention highlighting.
-pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool, ask_question_active: bool) {
-    // Dimmed input background when modal is open or ask_question is active
-    let input_bg = if is_dimmed || ask_question_active {
+pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool) {
+    // Dimmed input background when modal is open
+    let input_bg = if is_dimmed {
         DIM_BG
     } else {
         Color::Black
     };
-    let input_fg = if is_dimmed || ask_question_active {
+    let input_fg = if is_dimmed {
         DIM_TEXT
     } else {
         Color::White
@@ -39,11 +39,7 @@ pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool, ask_questio
     let total_lines = wrapped_lines.len();
 
     // Calculate cursor position to determine scroll offset
-    let (cursor_x, cursor_y) = if app.active_llm_calls == 0 {
-        cursor_position(&app.input, app.cursor_pos, available_width)
-    } else {
-        (0, 0)
-    };
+    let (cursor_x, cursor_y) = cursor_position(&app.input, app.cursor_pos, available_width);
 
     // Adjust scroll offset to ensure cursor is visible
     if total_lines > inner_height {
@@ -63,7 +59,7 @@ pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool, ask_questio
 
     let mut lines: Vec<Line> = Vec::new();
     for line_text in wrapped_lines {
-        let spans = colorize_input(&line_text, is_dimmed || ask_question_active);
+        let spans = colorize_input(&line_text, is_dimmed);
         lines.push(Line::from(spans));
     }
 
@@ -73,16 +69,13 @@ pub fn draw_input(app: &mut App, frame: &mut Frame, is_dimmed: bool, ask_questio
         .scroll((app.input_scroll_offset as u16, 0));
     frame.render_widget(input, inner);
 
-    // Hide cursor when ask_question is active or when LLM is running
-    if app.active_llm_calls == 0 && !ask_question_active {
-        // Adjust cursor Y position based on scroll
-        let visible_cursor_y = cursor_y.saturating_sub(app.input_scroll_offset);
-        let cursor_pos = ratatui::layout::Position {
-            x: inner.x + cursor_x as u16,
-            y: inner.y + visible_cursor_y as u16,
-        };
-        frame.set_cursor_position(cursor_pos);
-    }
+    // Always show cursor in input area
+    let visible_cursor_y = cursor_y.saturating_sub(app.input_scroll_offset);
+    let cursor_pos = ratatui::layout::Position {
+        x: inner.x + cursor_x as u16,
+        y: inner.y + visible_cursor_y as u16,
+    };
+    frame.set_cursor_position(cursor_pos);
 }
 
 /// Colorize input text, highlighting @mentions in yellow.
