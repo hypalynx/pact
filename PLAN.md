@@ -14,7 +14,6 @@
 - [ ] Fix email tokenization issue (e.g., @example.com shouldn't look like a file path)
 - [ ] Remove AskUserQuestion/AskQuestion - LLM questions work normally
 - [ ] Scrolling in debug view for specific records
-- [ ] User input messages during generation not queued properly
 
 ## 🚀 Feature Implementation
 - [ ] Add automated test action for CI/CD pipeline (run `make test` on every PR/commit)
@@ -23,8 +22,7 @@
 - [ ] Creating a task should show full todo list in message buffer
 
 ## 🐛 Bug Fixes
-- [ ] Context counting incorrect (getting 700k in kimi sessions when shouldn't)
-- [ ] Writing .md file was blocked (intermittent issue from March 4th around 21:16pm)
+(none currently)
 
 ---
 
@@ -32,6 +30,10 @@
 - need a way to release for both mac and linux (locally ideally)
 
 ### Recently Fixed
+- [x] Context counting incorrect (Mar 6, 2026)
+  - Fixed: Changed `+=` to `=` for token accumulation (only track last call, not cumulative)
+- [x] Writing .md file was blocked in plan mode (Mar 6, 2026)
+  - Fixed: Corrected parameter name from `"file_path"` to `"path"` in plan mode validation
 - [x] AskUserQuestion UI - was showing as hidden modal with dimmed screen (Mar 4, 2026)
   - Fixed: moved from centered modal to input area replacement
   - Now draws above the input box like bash_confirm

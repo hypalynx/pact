@@ -83,8 +83,8 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
             output_tokens,
             call_id: _,
         } => {
-            app.total_input_tokens += input_tokens;
-            app.total_output_tokens += output_tokens;
+            app.total_input_tokens = input_tokens;
+            app.total_output_tokens = output_tokens;
             app.last_output_tokens = output_tokens;
         }
         LlmEvent::ToolCall {
@@ -181,7 +181,7 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
 
             // Plan mode: Write/Edit restricted to .md files
             if app.mode_name == "plan" && (name == "Write" || name == "Edit") {
-                let path = args.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
                 if !path.ends_with(".md") {
                     let error = format!(
                         "Blocked in plan mode: {} is only allowed for .md files. \

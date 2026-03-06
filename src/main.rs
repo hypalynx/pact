@@ -234,10 +234,7 @@ fn main() -> std::io::Result<()> {
         }
 
         // Auto-send queued user message when idle
-        if app.pending_user_send
-            && app.active_llm_calls == 0
-            && app.pending_tool_count == 0
-        {
+        if app.pending_user_send && app.active_llm_calls == 0 && app.pending_tool_count == 0 {
             app.pending_user_send = false;
             app.send_to_llm();
         }
