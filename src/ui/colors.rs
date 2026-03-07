@@ -12,6 +12,10 @@ pub const DIM_WARN: Color = Color::Rgb(100, 100, 0); // Muted yellow for warning
 pub const DIM_AT: Color = Color::Rgb(100, 100, 0); // Muted @mention highlight
 pub const DIM_SCROLLBAR: Color = Color::Rgb(40, 40, 40); // Darker scrollbar when dimmed
 
+// Thinking text markdown colors (darker versions to match thinking aesthetic)
+pub const THINKING_BOLD: Color = Color::Rgb(200, 170, 0); // Darker yellow for bold in thinking
+pub const THINKING_CODE: Color = Color::Rgb(100, 180, 200); // Darker cyan for code in thinking
+
 /// Parse a color string into a ratatui Color.
 /// Supports standard color names (case-insensitive).
 pub fn parse_color(color_str: &str) -> Color {

@@ -203,12 +203,20 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
                 for (line_text, spans) in render_message(thinking, available_width) {
                     let mut padded_spans = vec![Span::raw("  ")];
                     for span in spans {
-                        let new_style = span.style.add_modifier(Modifier::ITALIC);
-                        let new_style = if new_style.fg.is_none() {
-                            new_style.fg(thinking_color)
-                        } else {
-                            new_style
-                        };
+                        let mut new_style = span.style.add_modifier(Modifier::ITALIC);
+                        // Use darker colors for markdown in thinking text
+                        match new_style.fg {
+                            Some(Color::Yellow) => {
+                                new_style = new_style.fg(THINKING_BOLD);
+                            }
+                            Some(Color::Cyan) => {
+                                new_style = new_style.fg(THINKING_CODE);
+                            }
+                            None => {
+                                new_style = new_style.fg(thinking_color);
+                            }
+                            _ => {}
+                        }
                         padded_spans.push(Span::styled(span.content.to_string(), new_style));
                     }
                     padded_spans.push(Span::raw("  "));
@@ -261,12 +269,20 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
         for (line_text, spans) in render_message(&app.pending_thinking, available_width) {
             let mut padded_spans = vec![Span::raw("  ")];
             for span in spans {
-                let new_style = span.style.add_modifier(Modifier::ITALIC);
-                let new_style = if new_style.fg.is_none() {
-                    new_style.fg(thinking_color)
-                } else {
-                    new_style
-                };
+                let mut new_style = span.style.add_modifier(Modifier::ITALIC);
+                // Use darker colors for markdown in thinking text
+                match new_style.fg {
+                    Some(Color::Yellow) => {
+                        new_style = new_style.fg(THINKING_BOLD);
+                    }
+                    Some(Color::Cyan) => {
+                        new_style = new_style.fg(THINKING_CODE);
+                    }
+                    None => {
+                        new_style = new_style.fg(thinking_color);
+                    }
+                    _ => {}
+                }
                 padded_spans.push(Span::styled(span.content.to_string(), new_style));
             }
             padded_spans.push(Span::raw("  "));

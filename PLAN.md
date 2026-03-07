@@ -6,9 +6,7 @@
 - [ ] config setting to turn off thinking via prompt
 
 ## 🎨 UI/UX Improvements
-- [ ] Paste handling improvement (show token for multiple lines pasted)
 - [ ] Truncate bash command output more aggressively
-- [ ] Format thinking text as markdown
 - [ ] Fix email tokenization issue (e.g., @example.com shouldn't look like a file path)
 - [ ] messages/text with dark gray background should cover an
   area rather than having background up to the last character on
