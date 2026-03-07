@@ -10,6 +10,9 @@
 - [ ] Truncate bash command output more aggressively
 - [ ] Format thinking text as markdown
 - [ ] Fix email tokenization issue (e.g., @example.com shouldn't look like a file path)
+- [ ] messages/text with dark gray background should cover an
+  area rather than having background up to the last character on
+  each line.
 
 ## 🚀 Feature Implementation
 - [ ] Add automated test action for CI/CD pipeline (run `make test` on every PR/commit)

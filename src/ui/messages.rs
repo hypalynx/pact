@@ -144,27 +144,26 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
                         };
 
                         // Truncate bash output for display (full content still sent to LLM)
-                        let display_content: std::borrow::Cow<str> = if matches!(
-                            msg.tool_name.as_deref(),
-                            Some("Bash") | Some("bash")
-                        ) {
-                            const MAX_BASH_DISPLAY_LINES: usize = 20;
-                            let lines: Vec<&str> = content.lines().collect();
-                            if lines.len() > MAX_BASH_DISPLAY_LINES {
-                                let truncated = lines[..MAX_BASH_DISPLAY_LINES].join("\n");
-                                std::borrow::Cow::Owned(format!(
-                                    "{}\n[... {} more lines ...]",
-                                    truncated,
-                                    lines.len() - MAX_BASH_DISPLAY_LINES
-                                ))
+                        let display_content: std::borrow::Cow<str> =
+                            if matches!(msg.tool_name.as_deref(), Some("Bash") | Some("bash")) {
+                                const MAX_BASH_DISPLAY_LINES: usize = 20;
+                                let lines: Vec<&str> = content.lines().collect();
+                                if lines.len() > MAX_BASH_DISPLAY_LINES {
+                                    let truncated = lines[..MAX_BASH_DISPLAY_LINES].join("\n");
+                                    std::borrow::Cow::Owned(format!(
+                                        "{}\n[... {} more lines ...]",
+                                        truncated,
+                                        lines.len() - MAX_BASH_DISPLAY_LINES
+                                    ))
+                                } else {
+                                    std::borrow::Cow::Borrowed(content)
+                                }
                             } else {
                                 std::borrow::Cow::Borrowed(content)
-                            }
-                        } else {
-                            std::borrow::Cow::Borrowed(content)
-                        };
+                            };
 
-                        for (line_text, spans) in render_message(&display_content, available_width) {
+                        for (line_text, spans) in render_message(&display_content, available_width)
+                        {
                             let mut padded_spans = vec![Span::raw("  ")];
                             // Apply tool result styling: tint all spans with tool_fg color
                             for span in spans {
