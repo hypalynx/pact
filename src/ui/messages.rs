@@ -78,13 +78,6 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
                 text_lines.pop();
             }
 
-            // Add top padding with dimmed background (but not for tool results)
-            if !msg.is_tool_result {
-                let padding_line = Span::styled("".to_string(), Style::default().bg(dim_bg_color));
-                lines.push(Line::from(vec![padding_line]));
-                text_lines.push(String::new());
-            }
-
             if msg.is_tool_result {
                 // Tool results: show summary line first
                 let padded = format!("  {}  ", msg.text);
@@ -185,8 +178,15 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
             } else {
                 // Regular user message
                 let wrapped = wrap_text(&msg.text, available_width);
+
+                // Calculate max width for consistent background fill
+                let max_line_width = wrapped.iter().map(|l| l.len()).max().unwrap_or(0);
+                let padded_width = max_line_width + 4; // 2 spaces on each side
+
                 for line_text in wrapped {
-                    let padded = format!("  {}  ", line_text);
+                    // Pad line to max width so background fills consistently
+                    let padding = padded_width.saturating_sub(line_text.len() + 4);
+                    let padded = format!("  {}{}  ", line_text, " ".repeat(padding));
                     let style = Style::default().bg(dim_bg_color).fg(dim_text_color);
                     lines.push(Line::from(vec![Span::styled(padded, style)]));
                     text_lines.push(line_text);
@@ -249,11 +249,8 @@ pub fn draw_messages(app: &mut App, frame: &mut ratatui::Frame, is_dimmed: bool)
                 text_lines.push(line_text);
             }
         }
-        // Add bottom padding for user messages with dimmed background (but not for tool results)
-        if msg.role == "user" && !msg.is_tool_result {
-            let padding_line = Span::styled("".to_string(), Style::default().bg(dim_bg_color));
-            lines.push(Line::from(vec![padding_line]));
-        } else {
+        // Add blank line below user messages
+        if msg.role == "user" {
             lines.push(Line::from(""));
         }
         text_lines.push(String::new());
