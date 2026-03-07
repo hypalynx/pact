@@ -61,3 +61,7 @@ AMD Ryzen 9 270 w/ Radeon 780M Graphics._
     be usable.
   - Gemini 3 Flash recommended as the best option. Kimi K2.5 also
     does very well.
+
+## Anti-features
+
+- sub-agents - haven't blown context yet, keep things simple.

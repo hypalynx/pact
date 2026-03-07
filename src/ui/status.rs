@@ -68,6 +68,14 @@ pub fn draw_status(app: &App, frame: &mut Frame, area: Rect, is_dimmed: bool) {
             "Call cancelled",
             Style::default().fg(normal_fg),
         ));
+    } else if app.has_pending_messages() {
+        let count = app.pending_user_messages.len();
+        let msg = if count == 1 {
+            "1 message pending".to_string()
+        } else {
+            format!("{} messages pending", count)
+        };
+        left_spans.push(Span::styled(msg, Style::default().fg(info_color)));
     } else {
         let pwd = get_pwd_display();
         let git_branch = get_git_branch();

@@ -233,10 +233,34 @@ fn main() -> std::io::Result<()> {
             app.send_to_llm();
         }
 
-        // Auto-send queued user message when idle
-        if app.pending_user_send && app.active_llm_calls == 0 && app.pending_tool_count == 0 {
-            app.pending_user_send = false;
-            app.send_to_llm();
+        // Auto-send queued user messages when idle
+        if app.has_pending_messages() && app.active_llm_calls == 0 && app.pending_tool_count == 0 {
+            // Record how many messages we're about to process (for rollback if needed)
+            let num_pending = app.pending_user_messages.len();
+            let pending = std::mem::take(&mut app.pending_user_messages);
+
+            // Add all pending messages to history and DB
+            for msg in &pending {
+                app.messages.push(msg.clone());
+                if let Some(db) = &app.db {
+                    let _ =
+                        db.save_message_with_session(&msg, &app.session_id, &app.working_directory);
+                }
+            }
+
+            // Only attempt send if still idle (double-check for timing issues)
+            if app.active_llm_calls == 0 {
+                app.send_to_llm();
+            } else {
+                // If something started an LLM call, put messages back in queue
+                for msg in pending {
+                    app.pending_user_messages.push(msg);
+                }
+                // Also remove the messages we just added to prevent duplicates
+                for _ in 0..num_pending {
+                    app.messages.pop();
+                }
+            }
         }
 
         // Poll for terminal events (16ms timeout for smooth UI at 60fps)

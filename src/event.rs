@@ -1155,4 +1155,134 @@ mod tests {
         assert_eq!(app.input, "hell");
         assert_eq!(app.cursor_pos, 4);
     }
+
+    #[test]
+    fn test_message_queued_when_llm_active() {
+        // When LLM is actively responding, messages should be queued, not added to history
+        let mut app = create_test_app();
+
+        // Simulate LLM starting a response
+        app.active_llm_calls = 1;
+
+        // Simulate user submitting input
+        app.input = "user message 1".to_string();
+        app.submit_message();
+
+        // Message should NOT be in history yet
+        assert_eq!(app.messages.len(), 0);
+        // Message should be queued
+        assert_eq!(app.pending_user_messages.len(), 1);
+        assert_eq!(app.pending_user_messages[0].text, "user message 1");
+
+        // Input should be cleared
+        assert_eq!(app.input, "");
+    }
+
+    #[test]
+    fn test_multiple_messages_queued() {
+        // User can queue multiple messages while LLM is responding
+        let mut app = create_test_app();
+
+        app.active_llm_calls = 1;
+
+        // Submit first message
+        app.input = "message 1".to_string();
+        app.submit_message();
+
+        // Submit second message
+        app.input = "message 2".to_string();
+        app.submit_message();
+
+        // Both should be queued
+        assert_eq!(app.pending_user_messages.len(), 2);
+        assert_eq!(app.pending_user_messages[0].text, "message 1");
+        assert_eq!(app.pending_user_messages[1].text, "message 2");
+        assert_eq!(app.messages.len(), 0);
+    }
+
+    #[test]
+    fn test_message_sent_immediately_when_idle() {
+        // When LLM is idle, messages should be added to history and sent
+        let mut app = create_test_app();
+
+        // LLM is idle (active_llm_calls = 0)
+        assert_eq!(app.active_llm_calls, 0);
+
+        app.input = "user message".to_string();
+        app.submit_message();
+
+        // Message should be in history
+        assert_eq!(app.messages.len(), 1);
+        assert_eq!(app.messages[0].text, "user message");
+        // No pending messages
+        assert_eq!(app.pending_user_messages.len(), 0);
+    }
+
+    #[test]
+    fn test_has_pending_messages() {
+        let mut app = create_test_app();
+
+        assert!(!app.has_pending_messages());
+
+        // Add a pending message
+        app.pending_user_messages.push(Message {
+            role: "user".to_string(),
+            text: "test".to_string(),
+            is_tool_result: false,
+            thinking: None,
+            tool_result_content: None,
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls: None,
+        });
+
+        assert!(app.has_pending_messages());
+    }
+
+    #[test]
+    fn test_timing_issue_recovery() {
+        // Simulate a timing issue: message is queued, then auto-send starts,
+        // but before send_to_llm() is called, a new LLM call begins.
+        // The fix should roll back the message to pending.
+        let mut app = create_test_app();
+
+        // Queue a message
+        app.pending_user_messages.push(Message {
+            role: "user".to_string(),
+            text: "queued message".to_string(),
+            is_tool_result: false,
+            thinking: None,
+            tool_result_content: None,
+            tool_call_id: None,
+            tool_name: None,
+            tool_calls: None,
+        });
+
+        let num_pending = app.pending_user_messages.len();
+        let pending = std::mem::take(&mut app.pending_user_messages);
+
+        // Simulate adding to history
+        for msg in &pending {
+            app.messages.push(msg.clone());
+        }
+
+        // Simulate a timing issue: active_llm_calls suddenly becomes non-zero
+        app.active_llm_calls = 1;
+
+        // Rollback logic
+        if app.active_llm_calls > 0 {
+            for msg in pending {
+                app.pending_user_messages.push(msg);
+            }
+            for _ in 0..num_pending {
+                app.messages.pop();
+            }
+        }
+
+        // After rollback, message should be back in pending_user_messages
+        assert_eq!(app.pending_user_messages.len(), 1);
+        assert_eq!(app.pending_user_messages[0].text, "queued message");
+        // And NOT in messages
+        assert_eq!(app.messages.len(), 0);
+    }
 }

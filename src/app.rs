@@ -194,7 +194,7 @@ pub struct App {
     pub needs_retry: bool,
 
     // Queue user messages submitted while LLM is generating
-    pub pending_user_send: bool,
+    pub pending_user_messages: Vec<Message>,
 
     // Task management
     pub tasks: Vec<Task>,
@@ -296,7 +296,7 @@ impl App {
             session_id,
             working_directory,
             needs_retry: false,
-            pending_user_send: false,
+            pending_user_messages: Vec::new(),
             tasks: Vec::new(),
             task_id_counter: 1,
             pending_ctrl_x: false,
@@ -362,28 +362,37 @@ impl App {
             tool_name: None,
             tool_calls: None,
         };
-        self.messages.push(msg.clone());
+
+        // If LLM is actively responding, queue the message to send later
+        if self.active_llm_calls > 0 {
+            self.pending_user_messages.push(msg);
+        } else {
+            // LLM is idle, add message to history and send immediately
+            self.messages.push(msg.clone());
+            // Save user message to database if available
+            if let Some(db) = &self.db {
+                let is_first_user_message = self
+                    .messages
+                    .iter()
+                    .filter(|m| m.role == "user" && !m.is_tool_result)
+                    .count()
+                    == 1;
+                if is_first_user_message {
+                    let preview = text.chars().take(60).collect::<String>();
+                    let _ = db.update_session_first_prompt(&self.session_id, &preview);
+                }
+                let _ =
+                    db.save_message_with_session(&msg, &self.session_id, &self.working_directory);
+            }
+            self.send_to_llm();
+        }
+
         self.history_index = None;
         self.unsent_draft.clear();
         self.unsent_cursor_pos = 0;
-        // Save user message to database if available
-        if let Some(db) = &self.db {
-            let is_first_user_message = self
-                .messages
-                .iter()
-                .filter(|m| m.role == "user" && !m.is_tool_result)
-                .count()
-                == 1;
-            if is_first_user_message {
-                let preview = text.chars().take(60).collect::<String>();
-                let _ = db.update_session_first_prompt(&self.session_id, &preview);
-            }
-            let _ = db.save_message_with_session(&msg, &self.session_id, &self.working_directory);
-        }
         self.input = String::new();
         self.cursor_pos = 0;
         self.auto_scroll = true;
-        self.send_to_llm();
     }
 
     fn resolve_file_picker_refs(&self, text: &str) -> String {
@@ -398,10 +407,13 @@ impl App {
         result
     }
 
+    pub fn has_pending_messages(&self) -> bool {
+        !self.pending_user_messages.is_empty()
+    }
+
     pub fn send_to_llm(&mut self) {
         // Safety net: reject if call already active
         if self.active_llm_calls > 0 {
-            self.pending_user_send = true;
             return;
         }
 
