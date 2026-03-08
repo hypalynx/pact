@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use pact::config::{Config, Mode, UiConfig};
+use pact::config::{Config, FilePermission, Mode, UiConfig};
 
 #[test]
 fn test_ui_config_defaults() {
@@ -28,8 +28,12 @@ fn test_mode_defaults() {
 fn test_mode_with_values() {
     let mode = Mode {
         system_prompt: Some("Test prompt".to_string()),
-        temperature: Some(0.5),
         color: Some("blue".to_string()),
+        temperature: Some(0.5),
+        top_p: None,
+        presence_penalty: None,
+        local_extensions: IndexMap::new(),
+        file_permission: FilePermission::Markdown,
     };
     assert_eq!(mode.system_prompt, Some("Test prompt".to_string()));
     assert_eq!(mode.temperature, Some(0.5));
@@ -98,8 +102,12 @@ fn test_config_clone() {
 fn test_mode_clone() {
     let mode = Mode {
         system_prompt: Some("Test".to_string()),
-        temperature: Some(0.7),
         color: Some("red".to_string()),
+        temperature: Some(0.7),
+        top_p: None,
+        presence_penalty: None,
+        local_extensions: IndexMap::new(),
+        file_permission: FilePermission::Markdown,
     };
     let cloned = mode.clone();
     assert_eq!(cloned.system_prompt, mode.system_prompt);
@@ -123,8 +131,12 @@ fn test_ui_config_with_custom_modes() {
         "custom".to_string(),
         Mode {
             system_prompt: Some("Custom prompt".to_string()),
-            temperature: Some(0.8),
             color: Some("yellow".to_string()),
+            temperature: Some(0.8),
+            top_p: None,
+            presence_penalty: None,
+            local_extensions: IndexMap::new(),
+            file_permission: FilePermission::Markdown,
         },
     );
 

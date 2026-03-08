@@ -4,6 +4,15 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum FilePermission {
+    Full,
+    #[default]
+    Markdown,
+    None,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub ui: UiConfig,
@@ -26,8 +35,17 @@ pub struct ProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Mode {
     pub system_prompt: Option<String>,
-    pub temperature: Option<f32>,
     pub color: Option<String>,
+    // OpenAI-compatible parameters
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub presence_penalty: Option<f32>,
+    // Backend-specific extensions (applied only if local backend)
+    #[serde(default)]
+    pub local_extensions: IndexMap<String, serde_json::Value>,
+    // File write permissions for this mode
+    #[serde(default)]
+    pub file_permission: FilePermission,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,8 +114,12 @@ If you need to implement code, tell the user to switch to Build mode (you cannot
 Focus on: understanding the codebase, designing solutions, writing clear plans."
                         .to_string(),
                 ),
-                temperature: Some(0.5),
                 color: Some("green".to_string()),
+                temperature: Some(0.5),
+                top_p: Some(0.9),
+                presence_penalty: None,
+                local_extensions: IndexMap::new(),
+                file_permission: FilePermission::Markdown,
             },
         );
         modes.insert(
@@ -112,8 +134,38 @@ Focus on: implementing, debugging, and refactoring code.
 Press Tab to switch to Plan mode for analysis and planning."
                         .to_string(),
                 ),
-                temperature: None,
                 color: Some("cyan".to_string()),
+                temperature: Some(0.3),
+                top_p: Some(0.9),
+                presence_penalty: None,
+                local_extensions: IndexMap::new(),
+                file_permission: FilePermission::Full,
+            },
+        );
+        modes.insert(
+            "research".to_string(),
+            Mode {
+                system_prompt: Some(
+                    "You are in RESEARCH mode - for exploring topics and writing.
+
+You can:
+- Read any file (Read, Glob, Grep tools)
+- Run shell commands to understand the project (Bash)
+- Fetch web content (Webfetch)
+- Write and edit markdown files (.md) for notes, documentation, and drafts
+
+You CANNOT write or edit non-markdown files in this mode.
+For code implementation, switch to Build mode.
+
+Focus on: researching topics, exploring ideas, writing prose."
+                        .to_string(),
+                ),
+                color: Some("blue".to_string()),
+                temperature: Some(0.75),
+                top_p: Some(0.92),
+                presence_penalty: Some(0.4),
+                local_extensions: IndexMap::new(),
+                file_permission: FilePermission::Markdown,
             },
         );
         modes

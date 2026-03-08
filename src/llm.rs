@@ -147,7 +147,7 @@ pub fn call_llm(
     endpoint: &str,
     api_key: Option<&str>,
     max_tokens: usize,
-    temperature: Option<f32>,
+    mode_config: Option<crate::config::Mode>,
     system_prompt: Option<String>,
     model_id: String,
     provider_name: Option<String>,
@@ -255,8 +255,28 @@ pub fn call_llm(
         }
     });
 
-    if let Some(temp) = temperature {
-        body["temperature"] = json!(temp);
+    // Apply OpenAI-compatible parameters from mode
+    if let Some(mode) = &mode_config {
+        if let Some(temp) = mode.temperature {
+            body["temperature"] = json!(temp);
+        }
+        if let Some(top_p) = mode.top_p {
+            body["top_p"] = json!(top_p);
+        }
+        if let Some(presence_penalty) = mode.presence_penalty {
+            body["presence_penalty"] = json!(presence_penalty);
+        }
+    }
+
+    // Check if local backend to conditionally apply extensions
+    let is_local = endpoint.contains("localhost") || endpoint.contains("127.0.0.1");
+    if is_local
+        && let Some(mode) = &mode_config
+        && !mode.local_extensions.is_empty()
+    {
+        for (key, value) in &mode.local_extensions {
+            body[key] = value.clone();
+        }
     }
 
     let request_body = serde_json::to_string_pretty(&body).unwrap_or_default();

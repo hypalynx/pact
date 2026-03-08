@@ -287,16 +287,24 @@ fn test_cycle_mode() {
         "build".to_string(),
         Mode {
             system_prompt: None,
-            temperature: None,
             color: Some("cyan".to_string()),
+            temperature: None,
+            top_p: None,
+            presence_penalty: None,
+            local_extensions: IndexMap::new(),
+            file_permission: pact::config::FilePermission::Full,
         },
     );
     modes.insert(
         "plan".to_string(),
         Mode {
             system_prompt: None,
-            temperature: None,
             color: Some("magenta".to_string()),
+            temperature: None,
+            top_p: None,
+            presence_penalty: None,
+            local_extensions: IndexMap::new(),
+            file_permission: pact::config::FilePermission::Markdown,
         },
     );
     app.modes_config = modes;
@@ -316,16 +324,24 @@ fn test_cycle_mode_wraps_around() {
         "build".to_string(),
         Mode {
             system_prompt: None,
-            temperature: None,
             color: Some("cyan".to_string()),
+            temperature: None,
+            top_p: None,
+            presence_penalty: None,
+            local_extensions: IndexMap::new(),
+            file_permission: pact::config::FilePermission::Full,
         },
     );
     modes.insert(
         "plan".to_string(),
         Mode {
             system_prompt: None,
-            temperature: None,
             color: Some("magenta".to_string()),
+            temperature: None,
+            top_p: None,
+            presence_penalty: None,
+            local_extensions: IndexMap::new(),
+            file_permission: pact::config::FilePermission::Markdown,
         },
     );
     app.modes_config = modes;

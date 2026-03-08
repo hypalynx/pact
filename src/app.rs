@@ -435,7 +435,7 @@ impl App {
         let debug = self.debug;
         let endpoint = self.api_endpoint.clone();
         let max_tokens = DEFAULT_MAX_TOKENS;
-        let temperature = self.temperature;
+        let mode_config = self.modes_config.get(&self.mode_name).cloned();
 
         // Get provider info (API key and model) from active provider if available
         let api_key = self
@@ -471,7 +471,7 @@ impl App {
                 &endpoint,
                 api_key.as_deref(),
                 max_tokens,
-                temperature,
+                mode_config,
                 system_prompt,
                 model_id,
                 provider_name,

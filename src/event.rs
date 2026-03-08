@@ -179,23 +179,48 @@ pub fn handle_llm_event(app: &mut App, event: LlmEvent) {
                 }
             }
 
-            // Plan mode: Write/Edit restricted to .md files
-            if app.mode_name == "plan" && (name == "Write" || name == "Edit") {
-                let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                if !path.ends_with(".md") {
-                    let error = format!(
-                        "Blocked in plan mode: {} is only allowed for .md files. \
-                         To modify source code, the user must switch to build mode (you cannot do this).",
-                        name
-                    );
-                    let _ = app.tx.send(LlmEvent::ToolResult {
-                        tool_name: name,
-                        tool_call_id: id,
-                        summary: "Tool blocked".to_string(),
-                        content: error,
-                        call_id: 0,
-                    });
-                    return;
+            // File write permission enforcement
+            if name == "Write" || name == "Edit" {
+                let file_perm = app
+                    .modes_config
+                    .get(&app.mode_name)
+                    .map(|m| &m.file_permission)
+                    .unwrap_or(&crate::config::FilePermission::Markdown);
+
+                match file_perm {
+                    crate::config::FilePermission::Full => {}
+                    crate::config::FilePermission::Markdown => {
+                        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                        if !path.ends_with(".md") {
+                            let error = format!(
+                                "Blocked: {} is only allowed for .md files in {} mode. \
+                                 To modify source code, switch to Build mode.",
+                                name, app.mode_name
+                            );
+                            let _ = app.tx.send(LlmEvent::ToolResult {
+                                tool_name: name,
+                                tool_call_id: id,
+                                summary: "Tool blocked".to_string(),
+                                content: error,
+                                call_id: 0,
+                            });
+                            return;
+                        }
+                    }
+                    crate::config::FilePermission::None => {
+                        let error = format!(
+                            "Blocked: {} is not allowed in {} mode.",
+                            name, app.mode_name
+                        );
+                        let _ = app.tx.send(LlmEvent::ToolResult {
+                            tool_name: name,
+                            tool_call_id: id,
+                            summary: "Tool blocked".to_string(),
+                            content: error,
+                            call_id: 0,
+                        });
+                        return;
+                    }
                 }
             }
 

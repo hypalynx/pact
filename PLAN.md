@@ -15,3 +15,7 @@
 
 ## 🎯 Release Needs
 - need a way to release for both mac and linux (locally ideally)
+
+Error: API error 400 Bad Request:
+{"error":{"object":"error","type":"invalid_request_error","code":"invalid_request_error","message":"Extra
+inputs are not permitted, field: 'chat_template_kwargs'"}}

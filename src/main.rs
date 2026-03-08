@@ -244,7 +244,7 @@ fn main() -> std::io::Result<()> {
                 app.messages.push(msg.clone());
                 if let Some(db) = &app.db {
                     let _ =
-                        db.save_message_with_session(&msg, &app.session_id, &app.working_directory);
+                        db.save_message_with_session(msg, &app.session_id, &app.working_directory);
                 }
             }
 
