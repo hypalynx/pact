@@ -15,7 +15,7 @@ pub enum FilePermission {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
-    pub ui: UiConfig,
+    pub modes: IndexMap<String, Mode>,
     #[serde(default)]
     pub debug: bool,
     pub agents_md_path: Option<String>,
@@ -51,12 +51,6 @@ pub struct Mode {
     pub default: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UiConfig {
-    #[serde(default)]
-    pub modes: IndexMap<String, Mode>,
-}
-
 impl Config {
     fn config_path() -> PathBuf {
         let mut path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -78,7 +72,7 @@ impl Config {
         };
 
         // Merge default modes with user config
-        config.ui.modes = Self::default_modes_merged(&config.ui.modes);
+        config.modes = Self::default_modes_merged(&config.modes);
         config
     }
 

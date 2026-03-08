@@ -1,11 +1,5 @@
 use indexmap::IndexMap;
-use pact::config::{Config, FilePermission, Mode, UiConfig};
-
-#[test]
-fn test_ui_config_defaults() {
-    let config = UiConfig::default();
-    assert!(config.modes.is_empty());
-}
+use pact::config::{Config, FilePermission, Mode};
 
 #[test]
 fn test_config_defaults() {
@@ -45,10 +39,10 @@ fn test_config_load_no_file() {
     // When it doesn't exist, it should return defaults
     let config = Config::load();
     // Default modes should include "build" and "plan"
-    assert!(config.ui.modes.contains_key("build"));
-    assert!(config.ui.modes.contains_key("plan"));
+    assert!(config.modes.contains_key("build"));
+    assert!(config.modes.contains_key("plan"));
     // Plan mode should be marked as default
-    assert!(config.ui.modes.get("plan").unwrap().default);
+    assert!(config.modes.get("plan").unwrap().default);
 }
 
 #[test]
@@ -63,12 +57,12 @@ fn test_config_has_default_build_mode() {
 #[test]
 fn test_config_has_default_plan_mode() {
     let config = Config::load();
-    let plan_mode = config.ui.modes.get("plan");
+    let plan_mode = config.modes.get("plan");
     assert!(plan_mode.is_some());
     let plan = plan_mode.unwrap();
-    assert!(plan.system_prompt.is_some());
     assert_eq!(plan.temperature, Some(0.5));
     assert!(plan.color.is_some());
+    assert!(plan.default);
 }
 
 #[test]
@@ -94,7 +88,7 @@ fn test_ui_config_modes_order() {
 fn test_config_clone() {
     let config = Config::default();
     let cloned = config.clone();
-    assert_eq!(cloned.ui.modes.len(), config.ui.modes.len());
+    assert_eq!(cloned.modes.len(), config.modes.len());
     assert_eq!(cloned.providers.len(), config.providers.len());
 }
 
@@ -120,13 +114,13 @@ fn test_mode_clone() {
 fn test_config_load_merges_modes() {
     let config = Config::load();
     // Should have at least the default modes
-    assert!(config.ui.modes.len() >= 2);
-    assert!(config.ui.modes.contains_key("build"));
-    assert!(config.ui.modes.contains_key("plan"));
+    assert!(config.modes.len() >= 2);
+    assert!(config.modes.contains_key("build"));
+    assert!(config.modes.contains_key("plan"));
 }
 
 #[test]
-fn test_ui_config_with_custom_modes() {
+fn test_config_with_custom_modes() {
     let mut modes = IndexMap::new();
     modes.insert(
         "custom".to_string(),
@@ -142,7 +136,10 @@ fn test_ui_config_with_custom_modes() {
         },
     );
 
-    let config = UiConfig { modes };
+    let config = Config {
+        modes,
+        ..Default::default()
+    };
 
     assert!(config.modes.contains_key("custom"));
     assert!(config.modes.get("custom").unwrap().default);
@@ -155,7 +152,7 @@ fn test_load_agents_context_no_files() {
     // Since we can't easily test without a local AGENTS.md in the project,
     // we verify that the function attempts to load from the custom path
     let config = Config {
-        ui: UiConfig::default(),
+        modes: IndexMap::new(),
         debug: false,
         agents_md_path: Some("/nonexistent/path/that/does/not/exist/AGENTS.md".to_string()),
         providers: vec![],
@@ -174,7 +171,7 @@ fn test_load_agents_context_with_custom_path() {
     // Test that custom agents_md_path is checked (even if nonexistent)
     // and local AGENTS.md is still available as fallback
     let config = Config {
-        ui: UiConfig::default(),
+        modes: IndexMap::new(),
         debug: false,
         agents_md_path: Some("/nonexistent/path/AGENTS.md".to_string()),
         providers: vec![],

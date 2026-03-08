@@ -170,15 +170,14 @@ fn main() -> std::io::Result<()> {
 
     // Find default mode: first mode with default=true, or first mode if none marked
     let default_mode_name = config
-        .ui
         .modes
         .iter()
         .find(|(_, mode)| mode.default)
         .map(|(name, _)| name.clone())
-        .or_else(|| config.ui.modes.keys().next().cloned())
+        .or_else(|| config.modes.keys().next().cloned())
         .unwrap_or_else(|| "plan".to_string());
 
-    let modes_config = config.ui.modes.clone();
+    let modes_config = config.modes.clone();
     let default_mode_config = modes_config.get(&default_mode_name).cloned();
     let temperature = default_mode_config.as_ref().and_then(|m| m.temperature);
     let agents_context = config.load_agents_context();
