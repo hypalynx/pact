@@ -4,14 +4,12 @@ use pact::config::{Config, FilePermission, Mode, UiConfig};
 #[test]
 fn test_ui_config_defaults() {
     let config = UiConfig::default();
-    assert_eq!(config.default_mode, "plan");
     assert!(config.modes.is_empty());
 }
 
 #[test]
 fn test_config_defaults() {
     let config = Config::default();
-    assert_eq!(config.ui.default_mode, "plan");
     assert!(!config.debug);
     assert!(config.providers.is_empty());
 }
@@ -34,6 +32,7 @@ fn test_mode_with_values() {
         presence_penalty: None,
         local_extensions: IndexMap::new(),
         file_permission: FilePermission::Markdown,
+        default: false,
     };
     assert_eq!(mode.system_prompt, Some("Test prompt".to_string()));
     assert_eq!(mode.temperature, Some(0.5));
@@ -45,10 +44,11 @@ fn test_config_load_no_file() {
     // Config::load() checks if config file exists
     // When it doesn't exist, it should return defaults
     let config = Config::load();
-    assert_eq!(config.ui.default_mode, "plan");
     // Default modes should include "build" and "plan"
     assert!(config.ui.modes.contains_key("build"));
     assert!(config.ui.modes.contains_key("plan"));
+    // Plan mode should be marked as default
+    assert!(config.ui.modes.get("plan").unwrap().default);
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn test_ui_config_modes_order() {
 fn test_config_clone() {
     let config = Config::default();
     let cloned = config.clone();
-    assert_eq!(cloned.ui.default_mode, config.ui.default_mode);
+    assert_eq!(cloned.ui.modes.len(), config.ui.modes.len());
     assert_eq!(cloned.providers.len(), config.providers.len());
 }
 
@@ -108,6 +108,7 @@ fn test_mode_clone() {
         presence_penalty: None,
         local_extensions: IndexMap::new(),
         file_permission: FilePermission::Markdown,
+        default: false,
     };
     let cloned = mode.clone();
     assert_eq!(cloned.system_prompt, mode.system_prompt);
@@ -137,16 +138,14 @@ fn test_ui_config_with_custom_modes() {
             presence_penalty: None,
             local_extensions: IndexMap::new(),
             file_permission: FilePermission::Markdown,
+            default: true,
         },
     );
 
-    let config = UiConfig {
-        default_mode: "custom".to_string(),
-        modes,
-    };
+    let config = UiConfig { modes };
 
-    assert_eq!(config.default_mode, "custom");
     assert!(config.modes.contains_key("custom"));
+    assert!(config.modes.get("custom").unwrap().default);
     assert_eq!(config.modes.get("custom").unwrap().temperature, Some(0.8));
 }
 

@@ -168,9 +168,19 @@ fn main() -> std::io::Result<()> {
 
     execute!(stdout(), EnableMouseCapture)?;
 
-    let default_mode_config = config.ui.modes.get(&config.ui.default_mode).cloned();
-    let temperature = default_mode_config.as_ref().and_then(|m| m.temperature);
+    // Find default mode: first mode with default=true, or first mode if none marked
+    let default_mode_name = config
+        .ui
+        .modes
+        .iter()
+        .find(|(_, mode)| mode.default)
+        .map(|(name, _)| name.clone())
+        .or_else(|| config.ui.modes.keys().next().cloned())
+        .unwrap_or_else(|| "plan".to_string());
+
     let modes_config = config.ui.modes.clone();
+    let default_mode_config = modes_config.get(&default_mode_name).cloned();
+    let temperature = default_mode_config.as_ref().and_then(|m| m.temperature);
     let agents_context = config.load_agents_context();
 
     let debug = args.debug || config.debug;
@@ -178,7 +188,7 @@ fn main() -> std::io::Result<()> {
     let mut app = App::new(
         debug,
         temperature,
-        config.ui.default_mode.clone(),
+        default_mode_name,
         modes_config,
         agents_context,
         session_id,

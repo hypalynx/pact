@@ -293,6 +293,7 @@ fn test_cycle_mode() {
             presence_penalty: None,
             local_extensions: IndexMap::new(),
             file_permission: pact::config::FilePermission::Full,
+            default: false,
         },
     );
     modes.insert(
@@ -305,6 +306,7 @@ fn test_cycle_mode() {
             presence_penalty: None,
             local_extensions: IndexMap::new(),
             file_permission: pact::config::FilePermission::Markdown,
+            default: true,
         },
     );
     app.modes_config = modes;
@@ -330,6 +332,7 @@ fn test_cycle_mode_wraps_around() {
             presence_penalty: None,
             local_extensions: IndexMap::new(),
             file_permission: pact::config::FilePermission::Full,
+            default: false,
         },
     );
     modes.insert(
@@ -342,6 +345,7 @@ fn test_cycle_mode_wraps_around() {
             presence_penalty: None,
             local_extensions: IndexMap::new(),
             file_permission: pact::config::FilePermission::Markdown,
+            default: true,
         },
     );
     app.modes_config = modes;

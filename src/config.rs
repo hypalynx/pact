@@ -46,27 +46,15 @@ pub struct Mode {
     // File write permissions for this mode
     #[serde(default)]
     pub file_permission: FilePermission,
+    // Whether this is the default mode
+    #[serde(default)]
+    pub default: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UiConfig {
-    #[serde(default = "default_mode")]
-    pub default_mode: String,
     #[serde(default)]
     pub modes: IndexMap<String, Mode>,
-}
-
-fn default_mode() -> String {
-    "plan".to_string()
-}
-
-impl Default for UiConfig {
-    fn default() -> Self {
-        Self {
-            default_mode: default_mode(),
-            modes: IndexMap::new(),
-        }
-    }
 }
 
 impl Config {
@@ -120,6 +108,7 @@ Focus on: understanding the codebase, designing solutions, writing clear plans."
                 presence_penalty: None,
                 local_extensions: IndexMap::new(),
                 file_permission: FilePermission::Markdown,
+                default: true,
             },
         );
         modes.insert(
@@ -140,6 +129,7 @@ Press Tab to switch to Plan mode for analysis and planning."
                 presence_penalty: None,
                 local_extensions: IndexMap::new(),
                 file_permission: FilePermission::Full,
+                default: false,
             },
         );
         modes.insert(
@@ -166,6 +156,7 @@ Focus on: researching topics, exploring ideas, writing prose."
                 presence_penalty: Some(0.4),
                 local_extensions: IndexMap::new(),
                 file_permission: FilePermission::Markdown,
+                default: false,
             },
         );
         modes
